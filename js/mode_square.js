@@ -223,14 +223,8 @@ class SquareMode {
     Yards.paintCourt(ctx, W, H, this.court);
     const quad = this._quad();
 
-    // меловые средние линии — по перспективе квадрата
-    const mTop = Yards.quadPoint(quad, .5, 0), mBot = Yards.quadPoint(quad, .5, 1);
-    const mL = Yards.quadPoint(quad, 0, .5), mR = Yards.quadPoint(quad, 1, .5);
-    ctx.save();
-    ctx.strokeStyle = 'rgba(250,245,230,.42)'; ctx.lineWidth = 2.5; ctx.setLineDash([9, 9]);
-    ctx.beginPath(); ctx.moveTo(mTop.x, mTop.y); ctx.lineTo(mBot.x, mBot.y); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(mL.x, mL.y); ctx.lineTo(mR.x, mR.y); ctx.stroke();
-    ctx.setLineDash([]); ctx.restore();
+    // меловая разметка: контур (если нет на арте), крест, центральный круг
+    Yards.drawCourtMarks(ctx, quad, { outer: !Yards.courtHasChalk() });
 
     // позиция мяча
     let ball = null, ballScale = 1;
@@ -265,7 +259,7 @@ class SquareMode {
         ctx.beginPath(); ctx.ellipse(p.x, p.y + 4 * s, 30 * s, 11 * s, 0, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI); ctx.stroke();
       }
       Yards.drawPlayer(ctx, p.x, p.y, s, ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field',
-        { phase: n.phase, moving: !!n.moving, face: n.face, kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .2) : false });
+        { phase: n.phase, moving: !!n.moving, face: !n.moving && ball ? (ball.x < p.x - 3 ? -1 : 1) : n.face, kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .2) : false });
       ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
       ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
       ctx.fillText(i === 0 ? 'ТЫ' : `${i + 1}`, p.x, p.y + 20 * s);

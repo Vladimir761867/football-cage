@@ -96,7 +96,7 @@ const ART = {
   russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new Image()])),
   ballAtlas: new Image()
 };
-const ART_VERSION = '?v=20261111-10';
+const ART_VERSION = '?v=20261111-12';
 ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
 ART.classicSquare.src = 'assets/yard-classic-square.png' + ART_VERSION;
 ART.classicGoal.src = 'assets/yard-classic-goal.png' + ART_VERSION;
@@ -141,7 +141,7 @@ const Yards = (() => {
      Где на арт-фоне лежит начерченный квадрат и стоят ворота
      (нормированные координаты изображения, сняты с макетов). */
   const ART_GEO = {
-    classicSquare:  { quad: [[.155, .322], [.93, .318], [.985, .70], [.015, .695]] },
+    classicSquare:  { quad: [[.144, .336], [.856, .336], [.978, .688], [.019, .688]] },
     russia90Square: { quad: [[.145, .405], [.875, .402], [.995, .685], [.0, .688]] },
     classicGoal:    { goal: { x: .215, w: .585, top: .305, bottom: .49 } },
     russia90Goal:   { goal: { x: .165, w: .66, top: .335, bottom: .52 } }
@@ -154,7 +154,9 @@ const Yards = (() => {
   // 4 экранных угла начерченного квадрата (TL, TR, BR, BL) или null
   function courtQuad(w, h) {
     const t = theme();
-    if (t.atlas) return null;
+    if (t.atlas) { // у триптихов квадрата на картинке нет — берём площадку на полу кадра
+      return [[.17, .53], [.83, .53], [.985, .92], [.015, .92]].map(([nx, ny]) => ({ x: nx * w, y: ny * h }));
+    }
     const ru = isRussia90(t);
     const img = ru ? ART.russia90Square : ART.classicSquare;
     if (!ready(img)) return null;
@@ -180,6 +182,45 @@ const Yards = (() => {
     const ax = lp(q[0].x, q[1].x, u), ay = lp(q[0].y, q[1].y, u);
     const bx = lp(q[3].x, q[2].x, u), by = lp(q[3].y, q[2].y, u);
     return { x: lp(ax, bx, v), y: lp(ay, by, v) };
+  }
+
+  // есть ли разметка квадрата на самой картинке (иначе её рисуем мы)
+  function courtHasChalk() {
+    const t = theme();
+    if (t.atlas) return false;
+    return ready(isRussia90(t) ? ART.russia90Square : ART.classicSquare);
+  }
+  // Меловая разметка по перспективе квадрата: контур (если его нет на арте),
+  // крест-линии и центральный круг. Яркая, с тёмной подложкой — видна на любом покрытии.
+  function drawCourtMarks(ctx, q, opts = {}) {
+    const P = (u, v) => quadPoint(q, u, v);
+    const path = pts => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); };
+    const lines = [];
+    if (opts.outer) lines.push([P(0, 0), P(1, 0), P(1, 1), P(0, 1), P(0, 0)]);
+    if (opts.cross !== false) {
+      lines.push([P(.5, 0), P(.5, 1)], [P(0, .5), P(1, .5)]);
+      const c = [];
+      for (let k = 0; k <= 40; k++) { const a = k / 40 * Math.PI * 2; c.push(P(.5 + Math.cos(a) * .11, .5 + Math.sin(a) * .11)); }
+      lines.push(c);
+    }
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,.34)'; ctx.lineWidth = 8;
+    lines.forEach(l => { path(l); ctx.stroke(); });
+    ctx.strokeStyle = 'rgba(255,255,255,.93)'; ctx.lineWidth = 4.5;
+    lines.forEach(l => { path(l); ctx.stroke(); });
+    ctx.restore();
+  }
+  // «эмоция» над головой: bubble с эмодзи
+  function drawEmote(ctx, x, y, s, emoji) {
+    ctx.save();
+    const r = 15 * s;
+    ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-4 * s, r - 2); ctx.lineTo(0, r + 8 * s); ctx.lineTo(5 * s, r - 3); ctx.closePath(); ctx.fill();
+    ctx.font = `${Math.round(20 * s)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, 0, 1);
+    ctx.restore();
   }
 
   function paintArt(ctx, w, h, img) {
@@ -366,11 +407,7 @@ const Yards = (() => {
   /* ---------- сцена: вид сверху («Квадрат») ---------- */
   function paintCourt(ctx, w, h, court) {
     const t = theme();
-    if (paintRussianAtlas(ctx, w, h, t)) {
-      ctx.strokeStyle = 'rgba(255,255,255,.82)'; ctx.lineWidth = 4;
-      ctx.strokeRect(court.x, court.y, court.w, court.h);
-      return;
-    }
+    if (paintRussianAtlas(ctx, w, h, t)) return;
     if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Square : ART.classicSquare)) return;
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, t.asphaltDark); g.addColorStop(.5, t.asphalt); g.addColorStop(1, t.asphaltDark);
@@ -705,5 +742,5 @@ const Yards = (() => {
     Save.data.selectedYard = saveSel;
   }
 
-  return { theme, ball, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, courtQuad, artGoal, quadPoint, YARDS, BALLS };
+  return { theme, ball, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
 })();
