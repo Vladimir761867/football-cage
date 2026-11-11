@@ -10,6 +10,7 @@
   let current = 'home';
   let activeMode = null, rafId = 0, lastT = 0, gesture = null, lastModeId = null;
   let hintTimer = 0, toastTimer = 0;
+  let difficulty = 'normal';
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -38,6 +39,7 @@
     $('#home-yard-label').textContent = Yards.theme().name;
   }
   function updateBests() {
+    $('#best-dog').textContent = Save.data.best.dog ? `Рекорд: ${Save.data.best.dog} передач` : 'Ещё не играл';
     $('#best-square').textContent = Save.data.best.square ? `Рекорд: ${Save.data.best.square} очк.` : 'Ещё не играл';
     $('#best-am300').textContent = Save.data.best.am300 ? `Рекорд: ${Save.data.best.am300} очк.` : 'Ещё не играл';
     $('#best-cross').textContent = Save.data.best.cross ? `Рекорд: ${Save.data.best.cross} очк.` : 'Ещё не играл';
@@ -71,6 +73,7 @@
 
   /* ---------- запуск режима ---------- */
   const MODES = {
+    dog: { cls: DogMode, title: 'Собачка' },
     square: { cls: SquareMode, title: 'Квадрат' },
     am300: { cls: Am300Mode, title: 'Американка 300' },
     cross: { cls: CrossMode, title: 'Навес' }
@@ -91,7 +94,7 @@
     gesture = new Gesture(canvas);
     const bgCache = {};
     const env = {
-      canvas, ctx, W: canvas.width, H: canvas.height, gesture, hud,
+      canvas, ctx, W: canvas.width, H: canvas.height, gesture, hud, difficulty,
       bgFor(key, painter) {
         if (!bgCache[key]) {
           const oc = document.createElement('canvas');
@@ -195,7 +198,7 @@
           <canvas class="ball-canvas" width="128" height="128"></canvas>
           <div class="ball-info">
             <div class="ball-name">${bl.name}</div>
-            <div class="ball-era">${bl.era} • одинаковая физика у всех мячей</div>
+            <div class="ball-era">${bl.era} • ${bl.material} • одинаковая физика</div>
           </div>`;
         Yards.drawBall(row.querySelector('canvas').getContext('2d'), 64, 64, 50, bl);
         const b = document.createElement('button');
@@ -295,6 +298,10 @@
   $('#btn-result-menu').onclick = () => { Sound.ui(); nav('modes'); };
   $$('[data-nav]').forEach(b => b.onclick = () => { Sound.ui(); nav(b.dataset.nav); });
   $$('.mode-card').forEach(b => b.onclick = () => { Sound.ui(); startMode(b.dataset.mode); });
+  $$('.difficulty-btn').forEach(b => b.onclick = () => {
+    Sound.ui(); difficulty = b.dataset.difficulty;
+    $$('.difficulty-btn').forEach(x => x.classList.toggle('active', x === b));
+  });
   $$('.shop-tab').forEach(b => b.onclick = () => {
     Sound.ui(); shopTab = b.dataset.tab; syncTabs(); renderShop();
   });

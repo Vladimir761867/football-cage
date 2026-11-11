@@ -76,13 +76,19 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--night)
 .home-row .btn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:8px;font-size:15px;}
 
 /* ---------- выбор режима ---------- */
+.difficulty-picker{display:flex;align-items:center;gap:7px;margin:-2px 0 12px;padding:8px 10px;
+  background:rgba(0,0,0,.38);border-radius:14px;color:var(--chalk);font-size:12px;}
+.difficulty-picker span{margin-right:auto;opacity:.8;}
+.difficulty-btn{border:1px solid rgba(240,230,210,.4);border-radius:10px;background:rgba(240,230,210,.16);
+  color:var(--chalk);padding:7px 9px;font:700 12px Rubik;cursor:pointer;}
+.difficulty-btn.active{background:var(--paper);color:var(--ink);box-shadow:0 2px 0 rgba(0,0,0,.28);}
 .mode-cards{display:flex;flex-direction:column;gap:14px;margin-top:6px;}
 .mode-card{
   position:relative;overflow:hidden;text-align:left;border:none;border-radius:18px;padding:16px 18px;cursor:pointer;
   background:linear-gradient(135deg,rgba(240,230,210,.97),rgba(226,212,184,.97));
   color:var(--ink);box-shadow:0 5px 0 rgba(0,0,0,.35);transform:rotate(-.6deg);}
 .mode-card::before{content:"";position:absolute;inset:0;opacity:.22;background-size:cover;background-position:center;mix-blend-mode:multiply;}
-.mode-card[data-mode="square"]::before{background-image:url('../assets/yard-russia90-square.png');}
+.mode-card[data-mode="dog"]::before,.mode-card[data-mode="square"]::before{background-image:url('../assets/yard-russia90-square.png');}
 .mode-card[data-mode="am300"]::before,.mode-card[data-mode="cross"]::before{background-image:url('../assets/yard-russia90-goal.png');}
 .mode-card>*{position:relative;z-index:1;}
 .mode-card:nth-child(2){transform:rotate(.5deg);}

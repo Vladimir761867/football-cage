@@ -44,15 +44,26 @@
         <div class="paper-title">Выбор режима</div>
         <div class="coins-chip coins-small" id="modes-coins">🪙 <b>0</b></div>
       </div>
+      <div class="difficulty-picker">
+        <span>Сложность</span>
+        <button class="difficulty-btn" data-difficulty="easy">Двор</button>
+        <button class="difficulty-btn active" data-difficulty="normal">Коробка</button>
+        <button class="difficulty-btn" data-difficulty="hard">Турнир</button>
+      </div>
       <div class="mode-cards">
+        <button class="mode-card" data-mode="dog">
+          <div class="mode-card-name">Собачка</div>
+          <div class="mode-card-desc">Игроки передают мяч, водящий пытается отнять. Сложность меняет число водящих и пасующих.</div>
+          <div class="mode-card-best" id="best-dog"></div>
+        </button>
         <button class="mode-card" data-mode="square">
           <div class="mode-card-name">Квадрат</div>
-          <div class="mode-card-desc">Держи мяч в передачах, не дай боту перехватить. 90 секунд.</div>
+          <div class="mode-card-desc">Четыре квадранта, отскоки и штрафные очки. 10 штрафов — вылет. Побеждает последний.</div>
           <div class="mode-card-best" id="best-square"></div>
         </button>
         <button class="mode-card" data-mode="am300">
           <div class="mode-card-name">Американка 300</div>
-          <div class="mode-card-desc">Бей по девятке, штанге и перекладине. Первый до 300 очков.</div>
+          <div class="mode-card-desc">Целься в штангу, перекладину и девятку. Сложность меняет разброс, тайминг и вратаря.</div>
           <div class="mode-card-best" id="best-am300"></div>
         </button>
         <button class="mode-card" data-mode="cross">
@@ -123,9 +134,10 @@
 <script src="js/save.js"></script>
 <script src="js/yards.js"></script>
 <script src="js/gesture.js"></script>
-<script src="js/mode_square.js"></script>
-<script src="js/mode_am300.js"></script>
-<script src="js/mode_cross.js"></script>
-<script src="js/main.js"></script>
+<script src="js/mode_dog.js?v=20261111"></script>
+<script src="js/mode_square.js?v=20261111"></script>
+<script src="js/mode_am300.js?v=20261111"></script>
+<script src="js/mode_cross.js?v=20261111"></script>
+<script src="js/main.js?v=20261111"></script>
 </body>
 </html>

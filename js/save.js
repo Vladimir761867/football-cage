@@ -7,8 +7,8 @@ const Save = (() => {
     selectedYard: 'classic',
     ownedBalls: ['classic'],
     selectedBall: 'classic',
-    best: { square: 0, am300: 0, cross: 0 },
-    tutorialSeen: { square: false, am300: false, cross: false },
+    best: { dog: 0, square: 0, am300: 0, cross: 0 },
+    tutorialSeen: { dog: false, square: false, am300: false, cross: false },
     settings: { sound: true, vibro: true }
   });
   let data = def();

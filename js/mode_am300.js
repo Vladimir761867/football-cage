@@ -4,6 +4,12 @@ class Am300Mode {
   constructor(env) {
     this.env = env;
     const { W, H } = env;
+    this.difficulty = env.difficulty || 'normal';
+    this.cfg = {
+      easy:   { spread: .15, window: .25, keeper: .16, keeperSpeed: .7 },
+      normal: { spread: .30, window: .16, keeper: .30, keeperSpeed: 1.15 },
+      hard:   { spread: .48, window: .09, keeper: .52, keeperSpeed: 1.8 }
+    }[this.difficulty];
     this.goal = { x: W * .14, y: H * .42, w: W * .72, h: H * .24 };
     this.ballPos = { x: W / 2, y: H * .82 };
     this.you = 0; this.bot = 0;
@@ -18,6 +24,7 @@ class Am300Mode {
     this.botT = 0;
     this.bestMoment = ''; this.bestVal = 0;
     this.maxDrag = H * .5;
+    this.keeper = { x: W * .5, phase: 0 };
 
     env.hud.setPills([
       { id: 'you', lbl: 'Ты', val: 0 },
@@ -59,14 +66,15 @@ class Am300Mode {
     const p = U.clamp(drag.len / this.maxDrag, 0, 1.1);
     const ph = this._timing();
     const timingErr = Math.abs(ph - .5) * 2;          // 0 = идеально
-    const golden = timingErr < .16;
+    const golden = timingErr < this.cfg.window;
     const powerErr = p < .35 ? (.35 - p) * 3 : p > .95 ? (p - .95) * 4 : 0;
-    const err = (timingErr * .55 + powerErr) * this.goal.w * .35;
+    const contactErr = timingErr > this.cfg.window ? timingErr * .9 : timingErr * .22;
+    const err = (contactErr + powerErr) * this.goal.w * this.cfg.spread;
     const a = Math.random() * Math.PI * 2;
     const hit = { x: this.aim.x + Math.cos(a) * err, y: this.aim.y + Math.sin(a) * err * .7 };
     if (p < .3) hit.y = this.goal.y - 6; // недолёт — мяч катится низом
     this.state = 'fly';
-    this.fly = { from: { ...this.ballPos }, to: hit, t: 0, dur: .38, golden };
+    this.fly = { from: { ...this.ballPos }, to: hit, t: 0, dur: .38 + timingErr * .12, golden };
     this.aim = null;
     Sound.kick();
   }
@@ -91,6 +99,15 @@ class Am300Mode {
     let z = this._zoneAt(to.x, to.y);
     let pts = z.pts, label = z.name;
     if (z.pts === 100 && golden) { pts = 150; label = 'Девятка + тайминг'; }
+    const keeperY = this.goal.y + 4;
+    const keeperReach = this.goal.w * .17;
+    const keeperHit = z.pts > 0 && Math.abs(to.x - this.keeper.x) < keeperReach && to.y > this.goal.y - this.goal.h * .7;
+    if (keeperHit && Math.random() < this.cfg.keeper) {
+      pts = z.pts >= 50 ? 10 : 0;
+      label = pts ? 'Вратарь коснулся мяча' : 'Вратарь отбил';
+      if (!pts) z = { pts: 0, name: label };
+      void keeperY;
+    }
     this.impactFx = { x: to.x, y: to.y, t: 0, pts, label };
     this.fly = null;
     if (pts >= 100) { Sound.goal(); this.env.hud.toast(`${label}! +${pts}`, 'gold'); }
@@ -127,6 +144,8 @@ class Am300Mode {
 
   update(dt) {
     this.oscT += dt;
+    this.keeper.phase += dt * this.cfg.keeperSpeed;
+    this.keeper.x = this.goal.x + this.goal.w * (.5 + Math.sin(this.keeper.phase * 1.3) * .30);
     if (this.state === 'fly' && this.fly) {
       this.fly.t += dt / this.fly.dur;
       if (this.fly.t >= 1) this._impact();
@@ -177,6 +196,11 @@ class Am300Mode {
     }
     ctx.restore();
     Yards.drawGoalFrame(ctx, g);
+    // Вратарь двигается по линии и на высокой сложности закрывает часть ворот.
+    Yards.drawPlayer(ctx, this.keeper.x, g.y + 4, 1.1, '#caa23c', 'keeper', {
+      phase: performance.now() / 260,
+      moving: true
+    });
     // подписи целей
     ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '700 12px Rubik'; ctx.textAlign = 'center';
     ctx.fillText('75', g.x + g.w / 2, topY - 14);
@@ -225,9 +249,10 @@ class Am300Mode {
     ctx.fillStyle = 'rgba(0,0,0,.55)';
     ctx.beginPath(); ctx.roundRect(bx - 6, by - 6, bw + 12, bh + 12, 10); ctx.fill();
     ctx.fillStyle = '#5a5f6a'; ctx.fillRect(bx, by, bw, bh);
-    // золотая зона
+    // золотая зона — на турнире она заметно уже
     ctx.fillStyle = '#ffd24d';
-    ctx.fillRect(bx + bw * .42, by, bw * .16, bh);
+    const half = this.cfg.window;
+    ctx.fillRect(bx + bw * (.5 - half), by, bw * half * 2, bh);
     // бегунок
     const ph = this._timing();
     ctx.fillStyle = '#fff';
