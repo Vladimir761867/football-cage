@@ -92,7 +92,7 @@ const ART = {
   russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new Image()])),
   ballAtlas: new Image()
 };
-const ART_VERSION = '?v=20261111-8';
+const ART_VERSION = '?v=20261111-9';
 ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
 ART.classicSquare.src = 'assets/yard-classic-square.png' + ART_VERSION;
 ART.classicGoal.src = 'assets/yard-classic-goal.png' + ART_VERSION;
@@ -585,6 +585,17 @@ const Yards = (() => {
       ctx.fillStyle = 'rgba(0,0,0,.22)';
       ctx.beginPath(); ctx.ellipse(0, -2 * s, dw * .26, 6 * s, 0, 0, Math.PI * 2); ctx.fill();
       if (motion && motion.face === -1) ctx.scale(-1, 1);
+      if (moving && !kicking) {
+        // пыль из-под ног: три затухающих облачка позади бегущего
+        const t = ((phase / (Math.PI / 2)) % 1 + 1) % 1;
+        for (let i = 0; i < 3; i++) {
+          const k = (t + i / 3) % 1;
+          ctx.fillStyle = `rgba(190,165,130,${(1 - k) * .26})`;
+          ctx.beginPath();
+          ctx.ellipse(-dw * .12 - k * 26 * s, -3 * s - k * 9 * s, (3 + k * 7) * s, (2 + k * 4) * s, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
       if (kicking && !(kind === 'blue')) ctx.rotate(-.16);
       ctx.drawImage(img, fi * cw, 0, cw, ch, -dw / 2, -dh, dw, dh);
       ctx.restore();
@@ -601,6 +612,9 @@ const Yards = (() => {
       const dw = dh * img.naturalWidth / img.naturalHeight;
       ctx.save();
       ctx.translate(x + sway, y - bob);
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      ctx.beginPath(); ctx.ellipse(0, -2 * s, dw * (diving ? .45 : .28), 6 * s, 0, 0, Math.PI * 2); ctx.fill();
+      if (keeper && !diving) { ctx.translate(Math.sin(performance.now() / 380) * 3 * s, 0); ctx.rotate(Math.sin(performance.now() / 380) * .03); }
       if (diving && motion.dive < 0) ctx.scale(-1, 1);
       else if (!keeper && motion && motion.face === -1) ctx.scale(-1, 1);
       if (!keeper) ctx.rotate((moving ? Math.sin(phase) * .045 : Math.sin(phase * .5) * .012) + (motion && motion.kick ? -.16 : 0));
