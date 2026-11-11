@@ -123,6 +123,51 @@ const Yards = (() => {
     ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
   }
 
+  /* ---------- геометрия нарисованных площадок ----------
+     Где на арт-фоне лежит начерченный квадрат и стоят ворота
+     (нормированные координаты изображения, сняты с макетов). */
+  const ART_GEO = {
+    classicSquare:  { quad: [[.155, .322], [.93, .318], [.985, .70], [.015, .695]] },
+    russia90Square: { quad: [[.145, .405], [.875, .402], [.995, .685], [.0, .688]] },
+    classicGoal:    { goal: { x: .215, w: .585, top: .305, bottom: .49 } },
+    russia90Goal:   { goal: { x: .165, w: .66, top: .335, bottom: .52 } }
+  };
+  function coverMap(img, w, h) {
+    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const sc = Math.max(w / sw, h / sh);
+    return { ox: (w - sw * sc) / 2, oy: (h - sh * sc) / 2, sx: sw * sc, sy: sh * sc };
+  }
+  // 4 экранных угла начерченного квадрата (TL, TR, BR, BL) или null
+  function courtQuad(w, h) {
+    const t = theme();
+    if (t.atlas) return null;
+    const ru = isRussia90(t);
+    const img = ru ? ART.russia90Square : ART.classicSquare;
+    if (!ready(img)) return null;
+    const m = coverMap(img, w, h);
+    return ART_GEO[ru ? 'russia90Square' : 'classicSquare'].quad
+      .map(([nx, ny]) => ({ x: m.ox + nx * m.sx, y: m.oy + ny * m.sy }));
+  }
+  // Экранный прямоугольник нарисованных ворот {x, y(земля), w, h} или null
+  function artGoal(w, h) {
+    const t = theme();
+    if (t.atlas) return null;
+    const ru = isRussia90(t);
+    const img = ru ? ART.russia90Goal : ART.classicGoal;
+    if (!ready(img)) return null;
+    const m = coverMap(img, w, h);
+    const g = ART_GEO[ru ? 'russia90Goal' : 'classicGoal'].goal;
+    return { x: m.ox + g.x * m.sx, y: m.oy + g.bottom * m.sy,
+             w: g.w * m.sx, h: (g.bottom - g.top) * m.sy };
+  }
+  // Точка внутри квадрата по (u,v) ∈ [0,1]² с учётом перспективы
+  function quadPoint(q, u, v) {
+    const lp = (a, b, t) => a + (b - a) * t;
+    const ax = lp(q[0].x, q[1].x, u), ay = lp(q[0].y, q[1].y, u);
+    const bx = lp(q[3].x, q[2].x, u), by = lp(q[3].y, q[2].y, u);
+    return { x: lp(ax, bx, v), y: lp(ay, by, v) };
+  }
+
   function paintArt(ctx, w, h, img) {
     if (!ready(img)) return false;
     drawCover(ctx, img, w, h);
@@ -525,8 +570,8 @@ const Yards = (() => {
       ctx.save();
       ctx.translate(x + sway, y - bob);
       if (diving && motion.dive < 0) ctx.scale(-1, 1);
-      else if (!keeper && Math.sin(phase * .45) < 0) ctx.scale(-1, 1);
-      if (!keeper) ctx.rotate(Math.sin(phase) * .045 + (motion && motion.kick ? -.14 : 0));
+      else if (!keeper && motion && motion.face === -1) ctx.scale(-1, 1);
+      if (!keeper) ctx.rotate((moving ? Math.sin(phase) * .045 : Math.sin(phase * .5) * .012) + (motion && motion.kick ? -.16 : 0));
       ctx.drawImage(img, -dw / 2, -dh, dw, dh);
       ctx.restore();
       return;
@@ -537,12 +582,14 @@ const Yards = (() => {
         : color === '#c0392b' ? 0
         : color === '#3f7fba' ? 1
         : 2;
-      const sx = (quadrant % 2) * 512, sy = Math.floor(quadrant / 2) * 512;
-      const dw = 116 * s, dh = 154 * s;
+      const qsz = ART.players.naturalWidth / 2;
+      const sx = (quadrant % 2) * qsz, sy = Math.floor(quadrant / 2) * qsz;
+      const dh = 150 * s, dw = dh; // квадранты листа квадратные
       ctx.save();
       ctx.globalAlpha = .98;
       ctx.translate(sway, -bob);
-      ctx.drawImage(ART.players, sx, sy, 512, 512, x - dw / 2, y - dh, dw, dh);
+      if (motion && motion.face === -1) { ctx.translate(x * 2, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(ART.players, sx, sy, qsz, qsz, x - dw / 2, y - dh, dw, dh);
       ctx.restore();
       return;
     }
@@ -585,5 +632,5 @@ const Yards = (() => {
     Save.data.selectedYard = saveSel;
   }
 
-  return { theme, ball, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, YARDS, BALLS };
+  return { theme, ball, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, courtQuad, artGoal, quadPoint, YARDS, BALLS };
 })();

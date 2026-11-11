@@ -137,6 +137,10 @@ class CrossMode {
   }
   update(dt) {
     if (this.finished) return;
+    // ворота из арт-фона, когда он загружен (точно по картинке)
+    if (!this._defGoal) this._defGoal = { ...this.goal };
+    const ag = Yards.artGoal(this.env.W, this.env.H);
+    this.goal = ag || this._defGoal;
     this.keeperX = U.lerp(this.keeperX, this.keeperTarget, 1 - Math.pow(.002, dt));
     this._setPositions();
     this.players.forEach(p => {
@@ -169,10 +173,11 @@ class CrossMode {
   draw(ctx) {
     const { W, H } = this.env;
     Yards.paintGoalScene(ctx, W, H, this.goal);
-    if (!Yards.theme().atlas) Yards.drawGoalFrame(ctx, this.goal);
+    if (!Yards.theme().atlas && !Yards.artGoal(W, H)) Yards.drawGoalFrame(ctx, this.goal);
     this.players.forEach((p, i) => {
       const keeper = i === this.keeperIndex;
-      Yards.drawPlayer(ctx, p.x, p.y, keeper ? 1.05 : 1.1,
+      const persp = .78 + (p.y / H) * .5; // дальше — меньше
+      Yards.drawPlayer(ctx, p.x, p.y, (keeper ? .92 : 1) * persp,
         keeper ? '#caa23c' : ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i],
         keeper ? 'keeper' : 'field',
         { phase: p.phase, moving: !keeper || this.dive !== 0, dive: keeper ? this.dive : 0,

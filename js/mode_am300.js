@@ -150,6 +150,10 @@ class Am300Mode {
   }
 
   update(dt) {
+    // ворота из арт-фона, когда он загружен (цели совпадают с картинкой)
+    if (!this._defGoal) this._defGoal = { ...this.goal };
+    const ag = Yards.artGoal(this.env.W, this.env.H);
+    this.goal = ag || this._defGoal;
     this.oscT += dt;
     this.keeper.phase += dt * this.cfg.keeperSpeed;
     const patrolX = this.goal.x + this.goal.w * (.5 + Math.sin(this.keeper.phase * 1.3) * .30);
@@ -212,9 +216,9 @@ class Am300Mode {
       ctx.fillText('75', nx, topY + nineR * 1.8);
     }
     ctx.restore();
-    if (!Yards.theme().atlas) Yards.drawGoalFrame(ctx, g);
+    if (!Yards.theme().atlas && !Yards.artGoal(this.env.W, this.env.H)) Yards.drawGoalFrame(ctx, g);
     // Вратарь двигается по линии и на высокой сложности закрывает часть ворот.
-    Yards.drawPlayer(ctx, this.keeper.x, g.y + 4, 1.1, '#caa23c', 'keeper', {
+    Yards.drawPlayer(ctx, this.keeper.x, g.y + 4, .95, '#caa23c', 'keeper', {
       phase: performance.now() / 260,
       moving: true, dive: this.keeper.dive
     });

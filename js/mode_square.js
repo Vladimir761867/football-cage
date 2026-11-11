@@ -1,23 +1,35 @@
 /* «Квадрат»: площадка делится на четыре части. Ошибка/два отскока в своей
-   части дают штрафное очко; на 10 штрафах игрок выбывает. */
+   части дают штрафное очко; на 10 штрафах игрок выбывает.
+   Игроки стоят в начерченном на земле квадрате (геометрия берётся из арт-фона),
+   бегают за мячом внутри своих четвертей, мяч скачет с видимым таймером. */
 class SquareMode {
   constructor(env) {
     this.env = env;
     const { W, H } = env;
     const difficulty = env.difficulty || 'normal';
     this.cfg = {
-      easy:   { receive: .98, botDelay: .42, botAcc: .70, angle: .66 },
-      normal: { receive: .74, botDelay: .30, botAcc: .84, angle: .52 },
-      hard:   { receive: .54, botDelay: .22, botAcc: .94, angle: .40 }
+      easy:   { receive: 1.35, botDelay: .55, botAcc: .74, angle: .66 },
+      normal: { receive: 1.0,  botDelay: .38, botAcc: .86, angle: .52 },
+      hard:   { receive: .74,  botDelay: .26, botAcc: .95, angle: .40 }
     }[difficulty];
-    this.court = { x: W * .09, y: H * .2, w: W * .82, h: H * .62 };
-    const c = this.court;
-    this.nodes = [
-      { x: c.x + c.w * .25, y: c.y + c.h * .25, phase: 0 },
-      { x: c.x + c.w * .75, y: c.y + c.h * .25, phase: .8 },
-      { x: c.x + c.w * .75, y: c.y + c.h * .75, phase: 1.6 },
-      { x: c.x + c.w * .25, y: c.y + c.h * .75, phase: 2.4 }
+    // запасной прямоугольник, если арт ещё не загрузился
+    this.court = { x: W * .09, y: H * .24, w: W * .82, h: H * .56 };
+    // четверти: ты — нижняя левая (ближе к пальцу и крупнее в перспективе)
+    this.bounds = [
+      { u: [.07, .44], v: [.56, .93] },
+      { u: [.56, .93], v: [.56, .93] },
+      { u: [.56, .93], v: [.07, .44] },
+      { u: [.07, .44], v: [.07, .44] }
     ];
+    this.nodes = [0, 1, 2, 3].map(i => {
+      const b = this.bounds[i];
+      return {
+        u: (b.u[0] + b.u[1]) / 2, v: (b.v[0] + b.v[1]) / 2,
+        tu: (b.u[0] + b.u[1]) / 2, tv: (b.v[0] + b.v[1]) / 2,
+        face: i === 0 || i === 3 ? 1 : -1, kickT: 0,
+        wanderT: .6 + i * .5, phase: i * 1.7
+      };
+    });
     this.errors = [0, 0, 0, 0];
     this.active = [true, true, true, true];
     this.holder = 0;
@@ -29,6 +41,7 @@ class SquareMode {
     this.score = 0;
     this.timeLeft = 150;
     this.lastMistake = '';
+    this.trail = [];
 
     env.hud.setPills([
       { id: 'you', lbl: 'Ты', val: '0/10' },
@@ -37,17 +50,18 @@ class SquareMode {
       { id: 'p4', lbl: 'Игрок 4', val: '0/10' }
     ]);
     env.hud.setTimer('150');
-    env.hud.hint('Твоя четверть — верхняя левая. Отбей мяч до второго отскока');
+    env.hud.hint('Твоя четверть — нижняя левая. Отбей до второго отскока');
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
-      const n = this.nodes[0];
-      if (Math.hypot(p.x - n.x, p.y - n.y) > Math.min(W, H) * .27) return;
+      const n = this._pos(0);
+      if (Math.hypot(p.x - n.x, p.y - n.y) > Math.min(W, H) * .3) return;
       this.aimDrag = { sx: n.x, sy: n.y, x: p.x, y: p.y, dx: 0, dy: 0, len: 0, angle: 0 };
     };
     env.gesture.onMove = d => {
       if (!this.aimDrag || this.state !== 'aim') return;
-      this.aimDrag = { ...this.aimDrag, x: d.x, y: d.y, dx: d.dx, dy: d.dy, len: d.len, angle: d.angle };
+      const n = this._pos(0);
+      this.aimDrag = { sx: n.x, sy: n.y, x: d.x, y: d.y, dx: d.dx, dy: d.dy, len: d.len, angle: d.angle };
     };
     env.gesture.onEnd = d => {
       const drag = this.aimDrag; this.aimDrag = null;
@@ -56,21 +70,45 @@ class SquareMode {
     };
   }
 
+  _quad() {
+    const { W, H } = this.env;
+    const q = Yards.courtQuad(W, H);
+    if (q) return q;
+    const c = this.court;
+    return [{ x: c.x, y: c.y }, { x: c.x + c.w, y: c.y },
+            { x: c.x + c.w, y: c.y + c.h }, { x: c.x, y: c.y + c.h }];
+  }
+  _pos(i) { return Yards.quadPoint(this._quad(), this.nodes[i].u, this.nodes[i].v); }
+  _scale(i) { return .6 + this.nodes[i].v * .55; }
   _targets() { return this.nodes.map((_, i) => i).filter(i => i !== this.holder && this.active[i]); }
 
   _hit(drag) {
-    const from = this.nodes[this.holder];
+    const from = this._pos(this.holder);
     let target = -1, bestDiff = 99;
     this._targets().forEach(i => {
-      const a = Math.atan2(this.nodes[i].y - from.y, this.nodes[i].x - from.x);
+      const p = this._pos(i);
+      const a = Math.atan2(p.y - from.y, p.x - from.x);
       const diff = Math.abs(U.angDiff(drag.angle, a));
       if (diff < bestDiff) { bestDiff = diff; target = i; }
     });
     if (target < 0) return;
     const p = U.clamp(drag.len / (Math.min(this.env.W, this.env.H) * .37), 0, 1.2);
     const outcome = bestDiff > this.cfg.angle || p < .24 || p > 1.04 ? 'out' : 'ok';
+    const n = this.nodes[this.holder];
+    n.kickT = .2;
+    n.face = Math.cos(drag.angle) >= 0 ? 1 : -1;
+    let destU, destV;
+    if (outcome === 'ok') {
+      const b = this.bounds[target];
+      destU = U.clamp((b.u[0] + b.u[1]) / 2 + (Math.random() - .5) * .26, b.u[0], b.u[1]);
+      destV = U.clamp((b.v[0] + b.v[1]) / 2 + (Math.random() - .5) * .26, b.v[0], b.v[1]);
+    } else {
+      destU = this.nodes[this.holder].u + Math.cos(drag.angle) * .5;
+      destV = this.nodes[this.holder].v + Math.sin(drag.angle) * .5;
+    }
     this.state = 'fly';
-    this.fly = { from: { ...from }, to: outcome === 'ok' ? { ...this.nodes[target] } : { x: from.x + Math.cos(drag.angle) * 180, y: from.y + Math.sin(drag.angle) * 180 }, target, outcome, t: 0, dur: .28 + .14 * (1 - p) };
+    this.fly = { from, destU, destV, target, outcome, t: 0, dur: .34 + .16 * (1 - p) };
+    this.trail = [];
     Sound.pass();
   }
 
@@ -106,7 +144,6 @@ class SquareMode {
     this.receiveT = 0;
     this.bounces = 0;
     this.score++;
-    if (this.holder !== 0) this.env.hud.hint(`Игрок ${this.holder + 1}: отбивает мяч…`);
   }
 
   _selectBotHolder() {
@@ -121,7 +158,7 @@ class SquareMode {
     const targets = this._targets();
     if (!targets.length) { this._finish(true); return; }
     const target = targets[Math.floor(Math.random() * targets.length)];
-    const from = this.nodes[this.holder], to = this.nodes[target];
+    const from = this._pos(this.holder), to = this._pos(target);
     const accurate = Math.random() < this.cfg.botAcc;
     const angle = Math.atan2(to.y - from.y, to.x - from.x) + (accurate ? 0 : (Math.random() - .5) * .85);
     this._hit({ angle, len: Math.min(this.env.W, this.env.H) * (accurate ? .55 : .22) });
@@ -131,15 +168,45 @@ class SquareMode {
     this.timeLeft -= dt;
     this.env.hud.setTimer(Math.max(0, Math.ceil(this.timeLeft)));
     if (this.timeLeft <= 0) { this._finish(this.active[0]); return; }
+
+    // движение игроков: приёмник бежит к точке паса, остальные гуляют по четверти
+    this.nodes.forEach((n, i) => {
+      if (!this.active[i]) return;
+      n.phase += dt * 6;
+      n.kickT = Math.max(0, n.kickT - dt);
+      let speed = .09;
+      if (this.fly && this.fly.target === i && this.fly.outcome === 'ok') {
+        n.tu = this.fly.destU; n.tv = this.fly.destV; speed = .62; // спринт к мячу
+      } else if (i === this.holder && this.state === 'aim') {
+        speed = .05;
+      } else {
+        n.wanderT -= dt;
+        if (n.wanderT <= 0) {
+          const b = this.bounds[i];
+          n.tu = b.u[0] + Math.random() * (b.u[1] - b.u[0]);
+          n.tv = b.v[0] + Math.random() * (b.v[1] - b.v[0]);
+          n.wanderT = 1.3 + Math.random() * 1.6;
+        }
+      }
+      const du = n.tu - n.u, dv = n.tv - n.v;
+      const dist = Math.hypot(du, dv);
+      n.moving = dist > .012;
+      if (n.moving) {
+        const step = Math.min(dist, speed * dt);
+        n.u += du / dist * step; n.v += dv / dist * step;
+        if (Math.abs(du) > .01) n.face = du > 0 ? 1 : -1;
+      }
+    });
+
     if (this.state === 'aim') {
       this.receiveT += dt;
-      if (this.holder !== 0 && this.receiveT >= this.cfg.botDelay) this._botHit();
+      if (this.holder !== 0 && this.receiveT >= this.cfg.botDelay + this.bounces * .3) this._botHit();
       if (this.receiveT >= this.cfg.receive) {
         this.bounces++;
         this.receiveT = 0;
-        if (this.bounces === 1) this.env.hud.toast('Первый отскок — успевай!', 'gold');
+        if (this.bounces === 1) { if (this.holder === 0) this.env.hud.toast('Первый отскок — отбивай!', 'gold'); }
         else {
-          this._markError(this.holder, 'Два отскока в своей части');
+          this._markError(this.holder, 'Два отскока');
           if (this._checkEnd()) return;
           this._selectBotHolder();
         }
@@ -154,35 +221,72 @@ class SquareMode {
   draw(ctx) {
     const { W, H } = this.env;
     Yards.paintCourt(ctx, W, H, this.court);
-    const c = this.court;
+    const quad = this._quad();
+
+    // меловые средние линии — по перспективе квадрата
+    const mTop = Yards.quadPoint(quad, .5, 0), mBot = Yards.quadPoint(quad, .5, 1);
+    const mL = Yards.quadPoint(quad, 0, .5), mR = Yards.quadPoint(quad, 1, .5);
     ctx.save();
-    ctx.strokeStyle = 'rgba(253,247,232,.65)'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
-    ctx.beginPath(); ctx.moveTo(c.x + c.w / 2, c.y); ctx.lineTo(c.x + c.w / 2, c.y + c.h); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(c.x, c.y + c.h / 2); ctx.lineTo(c.x + c.w, c.y + c.h / 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(250,245,230,.42)'; ctx.lineWidth = 2.5; ctx.setLineDash([9, 9]);
+    ctx.beginPath(); ctx.moveTo(mTop.x, mTop.y); ctx.lineTo(mBot.x, mBot.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mL.x, mL.y); ctx.lineTo(mR.x, mR.y); ctx.stroke();
     ctx.setLineDash([]); ctx.restore();
-    this.nodes.forEach((n, i) => {
-      if (!this.active[i]) return;
-      const holder = i === this.holder;
-      if (holder) {
-        ctx.strokeStyle = i === 0 ? 'rgba(130,230,90,.95)' : 'rgba(255,210,77,.8)';
-        ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(n.x, n.y - 15, 28 + Math.sin(performance.now() / 190) * 2, 0, 7); ctx.stroke();
-      }
-      Yards.drawPlayer(ctx, n.x, n.y, 1.05, ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field', { phase: n.phase + performance.now() / 310, moving: true });
-      ctx.fillStyle = '#fdf7e8'; ctx.font = '900 13px Rubik'; ctx.textAlign = 'center';
-      ctx.fillText(i === 0 ? 'ТЫ' : `${i + 1}`, n.x, n.y + 15);
-      ctx.fillStyle = this.errors[i] >= 7 ? '#ff8d7a' : '#ffd24d';
-      ctx.font = '900 12px Rubik'; ctx.fillText(`${this.errors[i]}/10`, n.x, n.y + 30);
-    });
-    let bx, by;
+
+    // позиция мяча
+    let ball = null, ballScale = 1;
     if (this.state === 'fly' && this.fly) {
-      const tt = U.easeOut(U.clamp(this.fly.t, 0, 1));
-      bx = U.lerp(this.fly.from.x, this.fly.to.x, tt);
-      by = U.lerp(this.fly.from.y, this.fly.to.y, tt) - Math.sin(tt * Math.PI) * 26;
+      const f = this.fly, tt = U.easeOut(U.clamp(f.t, 0, 1));
+      const dest = Yards.quadPoint(quad, f.destU, f.destV);
+      const x = U.lerp(f.from.x, dest.x, tt);
+      const y = U.lerp(f.from.y, dest.y, tt) - Math.sin(tt * Math.PI) * 60;
+      ball = { x, y };
+      ballScale = .6 + U.lerp(this.nodes[this.holder].v, f.destV, tt) * .55;
+      this.trail.push({ x, y });
+      if (this.trail.length > 5) this.trail.shift();
     } else {
-      const n = this.nodes[this.holder]; bx = n.x + 17; by = n.y - 8;
+      const i = this.holder, p = this._pos(i), s = this._scale(i);
+      const bounce = Math.abs(Math.sin(Math.PI * this.receiveT / this.cfg.receive));
+      ball = { x: p.x + this.nodes[i].face * 20 * s, y: p.y - 8 * s - bounce * 46 * s };
+      ballScale = s;
     }
-    Yards.drawBall(ctx, bx, by, 12);
-    if (this.aimDrag) { U.drawAim(ctx, this.aimDrag, 'rgba(255,255,255,.95)'); U.drawPower(ctx, this.aimDrag, Math.min(W, H) * .37); }
+
+    // игроки: дальние раньше ближних
+    const order = [0, 1, 2, 3].filter(i => this.active[i]).sort((a, b) => this.nodes[a].v - this.nodes[b].v);
+    order.forEach(i => {
+      const n = this.nodes[i], p = this._pos(i), s = this._scale(i);
+      const holder = i === this.holder && this.state === 'aim';
+      if (holder) {
+        // кольцо-таймер приёма: жёлтое, после первого отскока — красное
+        const frac = U.clamp(this.receiveT / this.cfg.receive, 0, 1);
+        ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.ellipse(p.x, p.y + 4 * s, 30 * s, 11 * s, 0, 0, 7); ctx.stroke();
+        ctx.strokeStyle = this.bounces ? 'rgba(255,100,80,.95)' : 'rgba(255,210,77,.95)';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.ellipse(p.x, p.y + 4 * s, 30 * s, 11 * s, 0, -Math.PI / 2, -Math.PI / 2 + frac * 2 * Math.PI); ctx.stroke();
+      }
+      Yards.drawPlayer(ctx, p.x, p.y, s, ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field',
+        { phase: n.phase, moving: !!n.moving, face: n.face, kick: n.kickT > 0 });
+      ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
+      ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
+      ctx.fillText(i === 0 ? 'ТЫ' : `${i + 1}`, p.x, p.y + 20 * s);
+      ctx.fillStyle = this.errors[i] >= 7 ? '#ff8d7a' : 'rgba(255,210,77,.9)';
+      ctx.font = `700 ${Math.round(11 * s)}px Rubik`;
+      ctx.fillText(`${this.errors[i]}/10`, p.x, p.y + 34 * s);
+    });
+
+    // шлейф и мяч
+    this.trail.forEach((t, k) => {
+      ctx.globalAlpha = (k + 1) / this.trail.length * .25;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(t.x, t.y, 5, 0, 7); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+    if (ball) Yards.drawBall(ctx, ball.x, ball.y, 12 * ballScale);
+
+    if (this.aimDrag) {
+      U.drawAim(ctx, this.aimDrag, 'rgba(255,255,255,.95)');
+      U.drawPower(ctx, this.aimDrag, Math.min(W, H) * .37);
+    }
   }
 
   _finish(won) {

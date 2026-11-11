@@ -12,6 +12,16 @@ class DogMode {
     this.difficulty = difficulty;
     this.court = { x: W * .09, y: H * .2, w: W * .82, h: H * .64 };
     this.center = { x: W * .5, y: H * .51 };
+    // если арт-фон загружен — вписываем круг игроков в начерченный квадрат
+    const q = Yards.courtQuad(W, H);
+    if (q) {
+      const xs = q.map(p => p.x), ys = q.map(p => p.y);
+      const top = Math.min(...ys), bot = Math.max(...ys);
+      const left = Math.min(...xs), right = Math.max(...xs);
+      this.court = { x: left + (right - left) * .06, y: top + (bot - top) * .1,
+                     w: (right - left) * .88, h: (bot - top) * .82 };
+      this.center = { x: (left + right) / 2, y: top + (bot - top) * .54 };
+    }
     this.passers = this._makePassers(this.cfg.passers);
     this.dogs = Array.from({ length: this.cfg.dogs }, (_, i) => ({
       x: this.center.x + (i ? 28 : -18), y: this.center.y + (i ? 12 : -8),
@@ -207,16 +217,20 @@ class DogMode {
         ctx.strokeStyle = i === 0 ? 'rgba(130,230,90,.95)' : 'rgba(255,210,77,.85)';
         ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(n.x, n.y - 16, 28 * pulse, 0, 7); ctx.stroke();
       }
-      Yards.drawPlayer(ctx, n.x, n.y, 1.05, i === 0 ? '#3f7fba' : i % 2 ? '#4e9fd1' : '#7a9f4b', 'field', { phase: n.phase + performance.now() / 300, moving: true });
+      const persp = .62 + (n.y / H) * .6;
+      Yards.drawPlayer(ctx, n.x, n.y, persp, i === 0 ? '#3f7fba' : i % 2 ? '#4e9fd1' : '#7a9f4b', 'field',
+        { phase: n.phase + performance.now() / 300, moving: this.state === 'fly', face: n.face || 1 });
       if (this.errors[i]) {
         ctx.fillStyle = '#ffd24d'; ctx.font = '900 13px Rubik'; ctx.textAlign = 'center';
         ctx.fillText(`${this.errors[i]}/10`, n.x, n.y + 14);
       }
     });
     this.dogs.forEach((d, i) => {
-      Yards.drawPlayer(ctx, d.x, d.y, 1.08, '#c0392b', 'field', { phase: d.phase, moving: true });
+      const dpersp = .62 + (d.y / H) * .6;
+      Yards.drawPlayer(ctx, d.x, d.y, dpersp, '#c0392b', 'field',
+        { phase: d.phase, moving: true, face: (d.tx - d.x) < 0 ? -1 : 1 });
       ctx.fillStyle = '#ffd24d'; ctx.font = '900 17px Rubik'; ctx.textAlign = 'center';
-      ctx.fillText(this.cfg.dogs > 1 ? 'С' + (i + 1) : 'С', d.x, d.y - 68);
+      ctx.fillText(this.cfg.dogs > 1 ? 'С' + (i + 1) : 'С', d.x, d.y - 74 * dpersp);
     });
     let bx, by;
     if (this.state === 'fly' && this.fly) {
