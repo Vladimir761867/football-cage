@@ -87,10 +87,12 @@ const ART = {
   runnerGreen: new Image(),
   keeperReady: new Image(),
   keeperDive: new Image(),
+  runAtlas: { blue: new Image(), red: new Image(), green: new Image() },
+  kickBlue: new Image(),
   russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new Image()])),
   ballAtlas: new Image()
 };
-const ART_VERSION = '?v=20261111-7';
+const ART_VERSION = '?v=20261111-8';
 ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
 ART.classicSquare.src = 'assets/yard-classic-square.png' + ART_VERSION;
 ART.classicGoal.src = 'assets/yard-classic-goal.png' + ART_VERSION;
@@ -103,6 +105,10 @@ ART.runnerRed.src = 'assets/runner-red.webp' + ART_VERSION;
 ART.runnerGreen.src = 'assets/runner-green.webp' + ART_VERSION;
 ART.keeperReady.src = 'assets/keeper-ready.webp' + ART_VERSION;
 ART.keeperDive.src = 'assets/keeper-dive.webp' + ART_VERSION;
+ART.runAtlas.blue.src = 'assets/run-blue.webp' + ART_VERSION;
+ART.runAtlas.red.src = 'assets/run-red.webp' + ART_VERSION;
+ART.runAtlas.green.src = 'assets/run-green.webp' + ART_VERSION;
+ART.kickBlue.src = 'assets/kick-blue.webp' + ART_VERSION;
 Object.entries(ART.russian).forEach(([code, img]) => { img.src = `assets/russia-${code}-triptych.webp` + ART_VERSION; });
 ART.ballAtlas.src = 'assets/balls-era-atlas.png' + ART_VERSION;
 Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.values(value))
@@ -558,6 +564,32 @@ const Yards = (() => {
     const moving = !motion || motion.moving !== false;
     const bob = moving ? Math.abs(Math.sin(phase)) * 2.4 * s : 0;
     const sway = moving ? Math.sin(phase) * 1.8 * s : 0;
+    if (pose !== 'keeper' && ready(ART.runAtlas.blue) && ready(ART.runAtlas.red) && ready(ART.runAtlas.green)) {
+      // Покадровая анимация: цикл бега (4 кадра), кадр удара (3 кадра, синий игрок).
+      const kind = color === '#c0392b' || color === '#d25743' ? 'red'
+        : color === '#7a9f4b' || color === '#5b9b69' ? 'green' : 'blue';
+      let img = ART.runAtlas[kind], n = 4, fi;
+      const kicking = motion && motion.kick;
+      if (kicking && kind === 'blue' && ready(ART.kickBlue)) {
+        img = ART.kickBlue; n = 3;
+        const k = typeof motion.kick === 'number' && motion.kick > 0 && motion.kick <= 1 ? motion.kick : .5;
+        fi = Math.min(2, Math.floor(k * 3));
+      } else if (moving) {
+        fi = Math.floor(((phase / (Math.PI / 2)) % 4 + 4) % 4);
+      } else fi = 1;
+      const cw = img.naturalWidth / n, ch = img.naturalHeight;
+      const dh = 150 * s, dw = dh * cw / ch;
+      ctx.save();
+      ctx.translate(x, y - (moving ? Math.abs(Math.sin(phase)) * 1.5 * s : 0));
+      // тень под ногами
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      ctx.beginPath(); ctx.ellipse(0, -2 * s, dw * .26, 6 * s, 0, 0, Math.PI * 2); ctx.fill();
+      if (motion && motion.face === -1) ctx.scale(-1, 1);
+      if (kicking && !(kind === 'blue')) ctx.rotate(-.16);
+      ctx.drawImage(img, fi * cw, 0, cw, ch, -dw / 2, -dh, dw, dh);
+      ctx.restore();
+      return;
+    }
     if (ready(ART.runner) && ready(ART.keeperReady) && ready(ART.keeperDive)) {
       const keeper = pose === 'keeper';
       const diving = keeper && motion && motion.dive;
