@@ -60,7 +60,8 @@ class DogMode {
     const cx = this.center.x, cy = this.center.y, rx = this.court.w * .35, ry = this.court.h * .34;
     return Array.from({ length: count }, (_, i) => {
       const a = -Math.PI / 2 + i * Math.PI * 2 / count;
-      return { x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry, phase: i * .7 };
+      const x = cx + Math.cos(a) * rx, y = cy + Math.sin(a) * ry;
+      return { x, y, baseX: x, baseY: y, phase: i * .7 };
     });
   }
 
@@ -152,6 +153,11 @@ class DogMode {
     this.timeLeft -= dt;
     this.env.hud.setTimer(Math.max(0, Math.ceil(this.timeLeft)));
     if (this.timeLeft <= 0) { this._finish(this.active[0] && this.score >= 10); return; }
+    this.passers.forEach((p, i) => {
+      p.phase += dt * (2.1 + i * .12);
+      p.x = p.baseX + Math.sin(p.phase) * 10;
+      p.y = p.baseY + Math.cos(p.phase * .75) * 7;
+    });
     const holder = this.passers[this.holder];
     if (this.state === 'aim' && this.holder !== 0) {
       this.thinkT -= dt;

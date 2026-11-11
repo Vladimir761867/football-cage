@@ -11,6 +11,7 @@
   let activeMode = null, rafId = 0, lastT = 0, gesture = null, lastModeId = null;
   let hintTimer = 0, toastTimer = 0;
   let difficulty = 'normal';
+  let opponentCount = 1;
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -94,7 +95,7 @@
     gesture = new Gesture(canvas);
     const bgCache = {};
     const env = {
-      canvas, ctx, W: canvas.width, H: canvas.height, gesture, hud, difficulty,
+      canvas, ctx, W: canvas.width, H: canvas.height, gesture, hud, difficulty, opponentCount,
       bgFor(key, painter) {
         if (!bgCache[key]) {
           const oc = document.createElement('canvas');
@@ -144,13 +145,17 @@
 
   /* ---------- магазин ---------- */
   let shopTab = 'yards';
+  let yardEra = 'all';
 
   function renderShop() {
     const list = $('#shop-list');
     list.innerHTML = '';
     if (shopTab === 'yards') {
-      Object.values(YARDS).forEach(y => {
-        const owned = Save.data.ownedYards.includes(y.id);
+      Object.values(YARDS).filter(y =>
+        (y.era || y.id === 'classic' || y.id === Save.data.selectedYard) &&
+        (yardEra === 'all' || y.era === yardEra)
+      ).forEach(y => {
+        const owned = y.free || Save.data.ownedYards.includes(y.id);
         const selected = Save.data.selectedYard === y.id;
         const card = document.createElement('div');
         card.className = 'shop-card';
@@ -271,7 +276,7 @@
       <h3>Настройки</h3>
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro"></button></div>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 11.11.2026 · 2</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 11.11.2026 · 7</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -309,11 +314,21 @@
     Sound.ui(); difficulty = b.dataset.difficulty;
     $$('.difficulty-btn').forEach(x => x.classList.toggle('active', x === b));
   });
+  $$('.opponents-btn').forEach(b => b.onclick = () => {
+    Sound.ui(); opponentCount = Number(b.dataset.opponents);
+    $$('.opponents-btn').forEach(x => x.classList.toggle('active', x === b));
+  });
   $$('.shop-tab').forEach(b => b.onclick = () => {
     Sound.ui(); shopTab = b.dataset.tab; syncTabs(); renderShop();
   });
+  $$('.yard-era-btn').forEach(b => b.onclick = () => {
+    Sound.ui(); yardEra = b.dataset.era;
+    $$('.yard-era-btn').forEach(x => x.classList.toggle('active', x === b));
+    renderShop();
+  });
   function syncTabs() {
     $$('.shop-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === shopTab));
+    $('#yard-era-filter').classList.toggle('hidden', shopTab !== 'yards');
   }
 
   window.addEventListener('resize', () => {

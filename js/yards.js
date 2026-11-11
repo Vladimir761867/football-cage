@@ -43,6 +43,26 @@ Object.assign(YARDS, {
   classic_80_garage: { ...YARDS.classic, id: 'classic_80_garage', name: 'Россия, 80-е — гаражный проезд', desc: 'Тихий проезд у гаражей, где играли до первого фонаря.', surface: 'грунт', place: 'гаражи', baseArt: 'classic', priceRub: 199, free: false }
 });
 
+const RUSSIAN_COURTS = [
+  ['80', '80-е', ['Двор между домами', 'Школьная гравийная коробка', 'Поле у гаражей'], ['асфальт', 'гравий', 'земля']],
+  ['90', '90-е', ['Панельный двор после дождя', 'Школьная коробка', 'Гаражное поле'], ['асфальт', 'асфальт', 'грунт']],
+  ['00', '2000-е', ['Обновлённый двор', 'Школьная спортплощадка', 'Травяное поле у домов'], ['асфальт', 'резиновое покрытие', 'трава']],
+  ['10', '2010-е', ['Мини-поле у новостроек', 'Школьный спорткомплекс', 'Обновлённая коробка'], ['искусственный газон', 'резиновое покрытие', 'асфальт']],
+  ['20', '2020-е', ['Современный двор', 'Многофункциональная школа', 'Поле старого района'], ['искусственный газон', 'резиновое покрытие', 'искусственный газон']]
+];
+RUSSIAN_COURTS.forEach(([code, era, names, surfaces]) => names.forEach((name, variant) => {
+  const id = `ru${code}_${variant + 1}`;
+  const base = code === '80' || code === '00' ? YARDS.classic : YARDS.russia90;
+  YARDS[id] = {
+    ...base, id, era, country: 'Россия', variant, atlas: code,
+    name: `Россия, ${era} — ${name}`,
+    desc: `${name}. Площадка эпохи ${era}, покрытие: ${surfaces[variant]}.`,
+    items: `Покрытие: ${surfaces[variant]} • архитектура и ворота эпохи ${era}`,
+    surface: surfaces[variant], free: variant === 0,
+    priceRub: variant === 0 ? 0 : 199
+  };
+}));
+
 const BALLS = {
   classic:   { id: 'classic',   name: 'Чёрно-белая классика', era: 'Базовый / 90-е', price: 0,   atlas: 1, material: 'потёртая синтетика', c1: '#f2ede2', c2: '#262626', style: 'penta' },
   leather80: { id: 'leather80', name: 'Кожаный с ручным швом', era: '80-е', price: 0,   atlas: 0, material: 'тяжёлая кожа', c1: '#9c6b3f', c2: '#6e4526', style: 'seams' },
@@ -62,9 +82,15 @@ const ART = {
   russia90Square: new Image(),
   russia90Goal: new Image(),
   players: new Image(),
+  runner: new Image(),
+  runnerRed: new Image(),
+  runnerGreen: new Image(),
+  keeperReady: new Image(),
+  keeperDive: new Image(),
+  russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new Image()])),
   ballAtlas: new Image()
 };
-const ART_VERSION = '?v=20261111-2';
+const ART_VERSION = '?v=20261111-7';
 ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
 ART.classicSquare.src = 'assets/yard-classic-square.png' + ART_VERSION;
 ART.classicGoal.src = 'assets/yard-classic-goal.png' + ART_VERSION;
@@ -72,8 +98,15 @@ ART.russia90Menu.src = 'assets/yard-russia90-menu.png' + ART_VERSION;
 ART.russia90Square.src = 'assets/yard-russia90-square.png' + ART_VERSION;
 ART.russia90Goal.src = 'assets/yard-russia90-goal.png' + ART_VERSION;
 ART.players.src = 'assets/players-sheet.png' + ART_VERSION;
+ART.runner.src = 'assets/runner.webp' + ART_VERSION;
+ART.runnerRed.src = 'assets/runner-red.webp' + ART_VERSION;
+ART.runnerGreen.src = 'assets/runner-green.webp' + ART_VERSION;
+ART.keeperReady.src = 'assets/keeper-ready.webp' + ART_VERSION;
+ART.keeperDive.src = 'assets/keeper-dive.webp' + ART_VERSION;
+Object.entries(ART.russian).forEach(([code, img]) => { img.src = `assets/russia-${code}-triptych.webp` + ART_VERSION; });
 ART.ballAtlas.src = 'assets/balls-era-atlas.png' + ART_VERSION;
-Object.values(ART).forEach(img => img.addEventListener('load', () => window.dispatchEvent(new Event('art-ready'))));
+Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.values(value))
+  .forEach(img => img.addEventListener('load', () => window.dispatchEvent(new Event('art-ready'))));
 
 const Yards = (() => {
 
@@ -97,6 +130,33 @@ const Yards = (() => {
     shade.addColorStop(0, 'rgba(9,14,24,.08)');
     shade.addColorStop(.58, 'rgba(9,14,24,.08)');
     shade.addColorStop(1, 'rgba(9,14,24,.68)');
+    ctx.fillStyle = shade; ctx.fillRect(0, 0, w, h);
+    return true;
+  }
+
+  function paintRussianAtlas(ctx, w, h, t) {
+    if (!t.atlas || !ready(ART.russian[t.atlas])) return false;
+    const img = ART.russian[t.atlas];
+    const cell = img.naturalWidth / 3;
+    const scale = Math.max(w / cell, h / img.naturalHeight);
+    const dw = cell * scale, dh = img.naturalHeight * scale;
+    ctx.drawImage(img, t.variant * cell, 0, cell, img.naturalHeight,
+      (w - dw) / 2, (h - dh) / 2, dw, dh);
+    // Общий визуальный язык любимого российского двора: тёплое окно/фонарь,
+    // вечернее небо, вид к воротам и свободное поле на переднем плане.
+    const evening = ctx.createLinearGradient(0, 0, 0, h);
+    evening.addColorStop(0, 'rgba(78,69,125,.14)');
+    evening.addColorStop(.42, 'rgba(255,174,104,.055)');
+    evening.addColorStop(1, 'rgba(38,32,58,.12)');
+    ctx.fillStyle = evening; ctx.fillRect(0, 0, w, h);
+    const lamp = ctx.createRadialGradient(w * .18, h * .27, 0, w * .18, h * .27, h * .38);
+    lamp.addColorStop(0, 'rgba(255,193,106,.10)');
+    lamp.addColorStop(1, 'rgba(255,193,106,0)');
+    ctx.fillStyle = lamp; ctx.fillRect(0, 0, w, h);
+    const shade = ctx.createLinearGradient(0, 0, 0, h);
+    shade.addColorStop(0, 'rgba(9,14,24,.15)');
+    shade.addColorStop(.65, 'rgba(9,14,24,0)');
+    shade.addColorStop(1, 'rgba(9,14,24,.55)');
     ctx.fillStyle = shade; ctx.fillRect(0, 0, w, h);
     return true;
   }
@@ -204,6 +264,7 @@ const Yards = (() => {
   /* ---------- сцена: фон меню ---------- */
   function paintMenu(ctx, w, h) {
     const t = theme();
+    if (paintRussianAtlas(ctx, w, h, t)) return;
     if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Menu : ART.classicMenu)) {
       return;
     }
@@ -246,6 +307,11 @@ const Yards = (() => {
   /* ---------- сцена: вид сверху («Квадрат») ---------- */
   function paintCourt(ctx, w, h, court) {
     const t = theme();
+    if (paintRussianAtlas(ctx, w, h, t)) {
+      ctx.strokeStyle = 'rgba(255,255,255,.82)'; ctx.lineWidth = 4;
+      ctx.strokeRect(court.x, court.y, court.w, court.h);
+      return;
+    }
     if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Square : ART.classicSquare)) return;
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, t.asphaltDark); g.addColorStop(.5, t.asphalt); g.addColorStop(1, t.asphaltDark);
@@ -299,6 +365,7 @@ const Yards = (() => {
   /* ---------- сцена: ворота анфас («Американка», «Навес») ---------- */
   function paintGoalScene(ctx, w, h, goal) {
     const t = theme();
+    if (paintRussianAtlas(ctx, w, h, t)) return;
     if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Goal : ART.classicGoal)) return;
     const hor = goal.y - goal.h - 40;
     skyGrad(ctx, w, h, t, hor + 10);
@@ -446,6 +513,24 @@ const Yards = (() => {
     const moving = !motion || motion.moving !== false;
     const bob = moving ? Math.abs(Math.sin(phase)) * 2.4 * s : 0;
     const sway = moving ? Math.sin(phase) * 1.8 * s : 0;
+    if (ready(ART.runner) && ready(ART.keeperReady) && ready(ART.keeperDive)) {
+      const keeper = pose === 'keeper';
+      const diving = keeper && motion && motion.dive;
+      const img = keeper ? diving ? ART.keeperDive : ART.keeperReady
+        : color === '#c0392b' || color === '#d25743' ? ART.runnerRed
+        : color === '#7a9f4b' || color === '#5b9b69' ? ART.runnerGreen
+        : ART.runner;
+      const dh = (diving ? 72 : keeper ? 120 : 146) * s;
+      const dw = dh * img.naturalWidth / img.naturalHeight;
+      ctx.save();
+      ctx.translate(x + sway, y - bob);
+      if (diving && motion.dive < 0) ctx.scale(-1, 1);
+      else if (!keeper && Math.sin(phase * .45) < 0) ctx.scale(-1, 1);
+      if (!keeper) ctx.rotate(Math.sin(phase) * .045 + (motion && motion.kick ? -.14 : 0));
+      ctx.drawImage(img, -dw / 2, -dh, dw, dh);
+      ctx.restore();
+      return;
+    }
     if (ready(ART.players)) {
       // Лист 2×2: красная куртка, синяя футболка, зелёное худи, вратарь.
       const quadrant = pose === 'keeper' ? 3

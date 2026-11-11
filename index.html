@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261111-2">
+<link rel="stylesheet" href="css/style.css?v=20261111-7">
 </head>
 <body>
 <div id="app">
@@ -50,6 +50,13 @@
         <button class="difficulty-btn active" data-difficulty="normal">Коробка</button>
         <button class="difficulty-btn" data-difficulty="hard">Турнир</button>
       </div>
+      <div class="opponents-picker">
+        <span>Американка: соперники</span>
+        <button class="opponents-btn active" data-opponents="1">1</button>
+        <button class="opponents-btn" data-opponents="2">2</button>
+        <button class="opponents-btn" data-opponents="3">3</button>
+        <button class="opponents-btn" data-opponents="0">Тренировка</button>
+      </div>
       <div class="mode-cards">
         <button class="mode-card" data-mode="dog">
           <div class="mode-card-name">Собачка</div>
@@ -63,12 +70,12 @@
         </button>
         <button class="mode-card" data-mode="am300">
           <div class="mode-card-name">Американка 300</div>
-          <div class="mode-card-desc">Целься в штангу, перекладину и девятку. Сложность меняет разброс, тайминг и вратаря.</div>
+          <div class="mode-card-desc">Штанга, перекладина, девятка. Играй против 1–3 соперников.</div>
           <div class="mode-card-best" id="best-am300"></div>
         </button>
         <button class="mode-card" data-mode="cross">
           <div class="mode-card-name">Навес</div>
-          <div class="mode-card-desc">Замыкай подачи: с лёта, головой или скидкой. 10 подач.</div>
+          <div class="mode-card-desc">Играют все: подающий, бьющий и вратарь. Промахнулся — встань на ворота.</div>
           <div class="mode-card-best" id="best-cross"></div>
         </button>
       </div>
@@ -119,6 +126,14 @@
         <button class="shop-tab active" data-tab="yards">🏠 Дворы</button>
         <button class="shop-tab" data-tab="balls">⚽ Мячи</button>
       </div>
+      <div class="yard-era-filter" id="yard-era-filter">
+        <button class="yard-era-btn active" data-era="all">Все</button>
+        <button class="yard-era-btn" data-era="80-е">80-е</button>
+        <button class="yard-era-btn" data-era="90-е">90-е</button>
+        <button class="yard-era-btn" data-era="2000-е">2000-е</button>
+        <button class="yard-era-btn" data-era="2010-е">2010-е</button>
+        <button class="yard-era-btn" data-era="2020-е">2020-е</button>
+      </div>
       <div class="shop-list" id="shop-list"></div>
       <div class="fair-note">Все предметы — косметика. Физика мяча и правила одинаковы для всех.</div>
     </div>
@@ -130,14 +145,14 @@
   </div>
 
 </div>
-<script src="js/sound.js?v=20261111-2"></script>
-<script src="js/save.js?v=20261111-2"></script>
-<script src="js/yards.js?v=20261111-2"></script>
-<script src="js/gesture.js?v=20261111-2"></script>
-<script src="js/mode_dog.js?v=20261111-2"></script>
-<script src="js/mode_square.js?v=20261111-2"></script>
-<script src="js/mode_am300.js?v=20261111-2"></script>
-<script src="js/mode_cross.js?v=20261111-2"></script>
-<script src="js/main.js?v=20261111-2"></script>
+<script src="js/sound.js?v=20261111-7"></script>
+<script src="js/save.js?v=20261111-7"></script>
+<script src="js/yards.js?v=20261111-7"></script>
+<script src="js/gesture.js?v=20261111-7"></script>
+<script src="js/mode_dog.js?v=20261111-7"></script>
+<script src="js/mode_square.js?v=20261111-7"></script>
+<script src="js/mode_am300.js?v=20261111-7"></script>
+<script src="js/mode_cross.js?v=20261111-7"></script>
+<script src="js/main.js?v=20261111-7"></script>
 </body>
 </html>

@@ -167,7 +167,7 @@ class SquareMode {
         ctx.strokeStyle = i === 0 ? 'rgba(130,230,90,.95)' : 'rgba(255,210,77,.8)';
         ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(n.x, n.y - 15, 28 + Math.sin(performance.now() / 190) * 2, 0, 7); ctx.stroke();
       }
-      Yards.drawPlayer(ctx, n.x, n.y, 1.05, i === 0 ? '#3f7fba' : '#4e9fd1', 'field', { phase: n.phase + performance.now() / 310, moving: true });
+      Yards.drawPlayer(ctx, n.x, n.y, 1.05, ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field', { phase: n.phase + performance.now() / 310, moving: true });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '900 13px Rubik'; ctx.textAlign = 'center';
       ctx.fillText(i === 0 ? 'ТЫ' : `${i + 1}`, n.x, n.y + 15);
       ctx.fillStyle = this.errors[i] >= 7 ? '#ff8d7a' : '#ffd24d';
