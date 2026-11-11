@@ -50,6 +50,15 @@ const RUSSIAN_COURTS = [
   ['10', '2010-е', ['Мини-поле у новостроек', 'Школьный спорткомплекс', 'Обновлённая коробка'], ['искусственный газон', 'резиновое покрытие', 'асфальт']],
   ['20', '2020-е', ['Современный двор', 'Многофункциональная школа', 'Поле старого района'], ['искусственный газон', 'резиновое покрытие', 'искусственный газон']]
 ];
+// Проёмы ворот в координатах каждой панели атласа: x, верх, ширина, высота.
+// Используются одновременно камерой, прицелом и проверкой попадания.
+const COURT_GOALS = {
+  '80': [[.411,.300,.296,.182],[.382,.391,.246,.097],[.340,.306,.370,.180]],
+  '90': [[.394,.329,.246,.146],[.378,.331,.266,.144],[.398,.328,.255,.135]],
+  '00': [[.460,.318,.236,.131],[.360,.340,.277,.146],[.362,.340,.274,.130]],
+  '10': [[.397,.355,.204,.128],[.397,.355,.206,.128],[.399,.359,.201,.126]],
+  '20': [[.415,.392,.234,.139],[.371,.392,.254,.139],[.385,.394,.256,.136]]
+};
 RUSSIAN_COURTS.forEach(([code, era, names, surfaces]) => names.forEach((name, variant) => {
   const id = `ru${code}_${variant + 1}`;
   const base = code === '80' || code === '00' ? YARDS.classic : YARDS.russia90;
@@ -71,6 +80,28 @@ const BALLS = {
   tech10:    { id: 'tech10',    name: 'Термосклеенный', era: '2010-е', price: 220, atlas: 3, material: 'матовая термопанель', c1: '#f5f5f5', c2: '#2c86b8', style: 'swoosh' },
   neon20:    { id: 'neon20',    name: 'Неон с геометрией', era: '2020-е', price: 300, atlas: 4, material: 'текстурный TPU', c1: '#1d2430', c2: '#5df09a', style: 'neon' }
 };
+
+// Сохраняем прежние id и покупки. В каждой эпохе — свой бесплатный мяч.
+Object.assign(BALLS.classic, { era: '90-е', decade: '90' });
+Object.assign(BALLS.leather80, { decade: '80' });
+Object.assign(BALLS.patch90, { decade: '90', filter: 'sepia(.35) brightness(.86)' });
+Object.assign(BALLS.glossy00, { decade: '00', price: 0 });
+Object.assign(BALLS.tech10, { decade: '10', price: 0 });
+Object.assign(BALLS.neon20, { decade: '20', price: 0 });
+[
+  ['panel80', '80', 'Чёрно-белый, 32 панели', 'шитые панели', 1, '', 120],
+  ['school80', '80', 'Школьный кожаный', 'светлая кожа', 0, 'saturate(.35) brightness(1.25)', 160],
+  ['winter90', '90', 'Оранжевый зимний', 'яркая синтетическая оболочка', 1, '', 180, '#e17c20'],
+  ['blue00', '00', 'Синие дуги', 'глянцевая синтетика', 2, 'hue-rotate(45deg)', 180],
+  ['silver00', '00', 'Серебристый тренировочный', 'синтетика с серебристой отделкой', 2, 'saturate(.12)', 220],
+  ['lime10', '10', 'Лаймовые панели', 'термосклеенные панели', 3, 'hue-rotate(65deg)', 220],
+  ['winter10', '10', 'Зимняя геометрия', 'яркая оболочка', 3, '', 240, '#e99c21'],
+  ['ice20', '20', 'Ледяная геометрия', 'текстурная оболочка', 4, 'hue-rotate(120deg)', 260],
+  ['coral20', '20', 'Коралловая геометрия', 'текстурная оболочка', 4, 'hue-rotate(240deg)', 300]
+].forEach(([id, decade, name, material, atlas, filter, price, tint]) => {
+  BALLS[id] = { id, decade, era: RUSSIAN_COURTS.find(r => r[0] === decade)[1],
+    name, material, atlas, filter, price, tint, c1: tint || '#f0eade', c2: '#263b52', style: 'penta' };
+});
 
 /* Живые фоновые ассеты. Если браузер ещё не успел их загрузить,
    остаётся процедурный fallback ниже — игра не ждёт сеть. */
@@ -111,10 +142,46 @@ Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.va
 const Yards = (() => {
 
   function theme() { return YARDS[Save.data.selectedYard] || YARDS.classic; }
-  function ball() { return BALLS[Save.data.selectedBall] || BALLS.classic; }
+  function ballEra(t = theme()) {
+    return t.atlas || (t.id.startsWith('classic_80') ? '80' : '90');
+  }
+  function ballsForEra(era = ballEra()) {
+    return Object.values(BALLS).filter(b => b.decade === era);
+  }
+  function syncBallToYard() {
+    const era = ballEra();
+    const remembered = Save.data.ballsByEra || (Save.data.ballsByEra = {});
+    const currentBall = BALLS[Save.data.selectedBall];
+    if (currentBall && Save.data.ownedBalls.includes(currentBall.id)) remembered[currentBall.decade] = currentBall.id;
+    const choices = ballsForEra(era);
+    const selected = choices.find(b => b.id === remembered[era] && Save.data.ownedBalls.includes(b.id))
+      || choices.find(b => b.price === 0);
+    if (!Save.data.ownedBalls.includes(selected.id)) Save.data.ownedBalls.push(selected.id);
+    Save.data.selectedBall = remembered[era] = selected.id;
+    Save.save();
+    return selected;
+  }
+  function ball() {
+    const selected = BALLS[Save.data.selectedBall];
+    return selected && selected.decade === ballEra() ? selected : ballsForEra().find(b => b.price === 0);
+  }
   function isRussia90(t) { return t.id === 'russia90' || t.baseArt === 'russia90'; }
 
   function ready(img) { return img && img.complete && img.naturalWidth > 0; }
+
+  function atlasPlacement(w, h, t) {
+    const aspect = t.atlas === '00' ? (2167 / 3) / 725 : 1;
+    const dh = Math.max(h, w / aspect), dw = dh * aspect;
+    const g = COURT_GOALS[t.atlas][t.variant];
+    const x = Math.max(w - dw, Math.min(0, w / 2 - dw * (g[0] + g[2] / 2)));
+    return { x, y: (h - dh) / 2, w: dw, h: dh };
+  }
+  function goalGeometry(w, h, fallback) {
+    const t = theme();
+    if (!t.atlas) return fallback;
+    const p = atlasPlacement(w, h, t), g = COURT_GOALS[t.atlas][t.variant];
+    return { x: p.x + g[0] * p.w, y: p.y + (g[1] + g[3]) * p.h, w: g[2] * p.w, h: g[3] * p.h };
+  }
 
   function drawCover(ctx, img, w, h) {
     const sw = img.naturalWidth, sh = img.naturalHeight;
@@ -138,10 +205,9 @@ const Yards = (() => {
     if (!t.atlas || !ready(ART.russian[t.atlas])) return false;
     const img = ART.russian[t.atlas];
     const cell = img.naturalWidth / 3;
-    const scale = Math.max(w / cell, h / img.naturalHeight);
-    const dw = cell * scale, dh = img.naturalHeight * scale;
+    const p = atlasPlacement(w, h, t);
     ctx.drawImage(img, t.variant * cell, 0, cell, img.naturalHeight,
-      (w - dw) / 2, (h - dh) / 2, dw, dh);
+      p.x, p.y, p.w, p.h);
     // Общий визуальный язык любимого российского двора: тёплое окно/фонарь,
     // вечернее небо, вид к воротам и свободное поле на переднем плане.
     const evening = ctx.createLinearGradient(0, 0, 0, h);
@@ -307,11 +373,7 @@ const Yards = (() => {
   /* ---------- сцена: вид сверху («Квадрат») ---------- */
   function paintCourt(ctx, w, h, court) {
     const t = theme();
-    if (paintRussianAtlas(ctx, w, h, t)) {
-      ctx.strokeStyle = 'rgba(255,255,255,.82)'; ctx.lineWidth = 4;
-      ctx.strokeRect(court.x, court.y, court.w, court.h);
-      return;
-    }
+    if (paintRussianAtlas(ctx, w, h, t)) return;
     if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Square : ART.classicSquare)) return;
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, t.asphaltDark); g.addColorStop(.5, t.asphalt); g.addColorStop(1, t.asphaltDark);
@@ -326,10 +388,6 @@ const Yards = (() => {
     // трещины
     ctx.strokeStyle = 'rgba(0,0,0,.25)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(w * .1, h * .7); ctx.quadraticCurveTo(w * .3, h * .76, w * .34, h * .95); ctx.stroke();
-    // разметка квадрата мелом
-    ctx.strokeStyle = t.line; ctx.lineWidth = 4; ctx.setLineDash(isRussia90(t) ? [18, 12] : []);
-    ctx.strokeRect(court.x, court.y, court.w, court.h);
-    ctx.setLineDash([]);
     // уголки-конусы или кирпичи
     const corners = [[court.x, court.y], [court.x + court.w, court.y], [court.x, court.y + court.h], [court.x + court.w, court.y + court.h]];
     corners.forEach(([cx, cy]) => {
@@ -347,6 +405,26 @@ const Yards = (() => {
     chalkCrown(ctx, w * .84, h * .12);
     if (isRussia90(t)) chalkSun(ctx, w * .12, h * .9);
     vignette(ctx, w, h);
+  }
+  // Выбираем краску по яркости уже нарисованного покрытия. Контрастный
+  // кант сохраняет линии на пёстрых участках и бликах. Вызывается в кэше фона.
+  function drawCourtLines(ctx, court, quarters = false) {
+    const m = ctx.getTransform();
+    let luminance = 0;
+    for (const fx of [.15, .5, .85]) for (const fy of [.15, .5, .85]) {
+      const p = ctx.getImageData(Math.round((court.x + court.w * fx) * m.a), Math.round((court.y + court.h * fy) * m.d), 1, 1).data;
+      luminance += p[0] * .2126 + p[1] * .7152 + p[2] * .0722;
+    }
+    const dark = luminance / 9 > 145;
+    ctx.save(); ctx.setLineDash([]); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.rect(court.x, court.y, court.w, court.h);
+    if (quarters) {
+      ctx.moveTo(court.x + court.w / 2, court.y); ctx.lineTo(court.x + court.w / 2, court.y + court.h);
+      ctx.moveTo(court.x, court.y + court.h / 2); ctx.lineTo(court.x + court.w, court.y + court.h / 2);
+    }
+    ctx.lineWidth = 6; ctx.strokeStyle = dark ? 'rgba(255,255,255,.65)' : 'rgba(14,22,30,.65)'; ctx.stroke();
+    ctx.lineWidth = 3; ctx.strokeStyle = dark ? '#243444' : '#fff3d4'; ctx.stroke();
+    ctx.restore();
   }
   function chalkCrown(ctx, x, y) {
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 7, y - 14); ctx.lineTo(x + 14, y - 4);
@@ -432,7 +510,24 @@ const Yards = (() => {
   }
 
   /* ---------- мяч ---------- */
-  function drawBall(ctx, x, y, r, ballDef) {
+  const trails = new WeakMap();
+  function drawBall(ctx, x, y, r, ballDef, flying = false) {
+    const now = performance.now();
+    let trail = trails.get(ctx) || [];
+    const last = trail[trail.length - 1];
+    if (!flying || (last && Math.hypot(x - last.x, y - last.y) > 160)) trail = [];
+    if (flying) {
+      trail = trail.filter(p => now - p.t < 90).slice(-6);
+      ctx.save(); ctx.lineCap = 'round';
+      trail.forEach((p, i) => {
+        const next = trail[i + 1] || {x, y};
+        ctx.strokeStyle = `rgba(255,239,190,${.22 * (1 - (now - p.t) / 90)})`;
+        ctx.lineWidth = r * .7;
+        ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(next.x, next.y); ctx.stroke();
+      });
+      ctx.restore(); trail.push({x, y, t: now});
+    }
+    trails.set(ctx, trail);
     const b = ballDef || ball();
     if (ready(ART.ballAtlas) && Number.isInteger(b.atlas)) {
       // Атлас состоит из пяти ячеек: кожа 80-х, классика 90-х,
@@ -440,12 +535,18 @@ const Yards = (() => {
       // Рисуем чуть больше радиуса, чтобы сохранились фактура и контактная тень.
       const cellW = ART.ballAtlas.naturalWidth / 5;
       const sx = b.atlas * cellW;
-      const sy = ART.ballAtlas.naturalHeight * .13;
+      const sy = ART.ballAtlas.naturalHeight * .49 - cellW / 2;
       const sw = cellW;
-      const sh = ART.ballAtlas.naturalHeight * .70;
-      const size = r * 2.72;
+      const sh = cellW;
+      const size = r * 2.2;
       ctx.save();
+      ctx.filter = b.filter || 'none';
       ctx.drawImage(ART.ballAtlas, sx, sy, sw, sh, x - size / 2, y - size / 2, size, size);
+      ctx.filter = 'none';
+      if (b.tint) {
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = b.tint; ctx.beginPath(); ctx.arc(x, y, r * .94, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.restore();
       return;
     }
@@ -509,24 +610,28 @@ const Yards = (() => {
 
   /* ---------- игрок (силуэт) ---------- */
   function drawPlayer(ctx, x, y, s, color, pose, motion) {
+    s *= .74;
     const phase = motion && Number.isFinite(motion.phase) ? motion.phase : performance.now() / 240;
-    const moving = !motion || motion.moving !== false;
-    const bob = moving ? Math.abs(Math.sin(phase)) * 2.4 * s : 0;
-    const sway = moving ? Math.sin(phase) * 1.8 * s : 0;
+    const moving = motion && motion.moving === true;
+    const bob = moving ? (1 - Math.cos(phase * 2)) * .75 * s : Math.sin(phase * .4) * .35 * s;
+    const sway = moving ? Math.sin(phase) * .8 * s : 0;
     if (ready(ART.runner) && ready(ART.keeperReady) && ready(ART.keeperDive)) {
       const keeper = pose === 'keeper';
       const diving = keeper && motion && motion.dive;
-      const img = keeper ? diving ? ART.keeperDive : ART.keeperReady
+      const candidate = keeper ? diving ? ART.keeperDive : ART.keeperReady
         : color === '#c0392b' || color === '#d25743' ? ART.runnerRed
         : color === '#7a9f4b' || color === '#5b9b69' ? ART.runnerGreen
         : ART.runner;
+      const img = ready(candidate) ? candidate : ART.runner;
       const dh = (diving ? 72 : keeper ? 120 : 146) * s;
       const dw = dh * img.naturalWidth / img.naturalHeight;
       ctx.save();
+      ctx.fillStyle = 'rgba(5,12,20,.34)';
+      ctx.beginPath(); ctx.ellipse(x, y + 1, 20 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
       ctx.translate(x + sway, y - bob);
       if (diving && motion.dive < 0) ctx.scale(-1, 1);
-      else if (!keeper && Math.sin(phase * .45) < 0) ctx.scale(-1, 1);
-      if (!keeper) ctx.rotate(Math.sin(phase) * .045 + (motion && motion.kick ? -.14 : 0));
+      else if (!keeper && motion && motion.facing < 0) ctx.scale(-1, 1);
+      if (!keeper) ctx.rotate((moving ? Math.sin(phase) * .018 : 0) + (motion && motion.kick ? -.10 : 0));
       ctx.drawImage(img, -dw / 2, -dh, dw, dh);
       ctx.restore();
       return;
@@ -537,12 +642,13 @@ const Yards = (() => {
         : color === '#c0392b' ? 0
         : color === '#3f7fba' ? 1
         : 2;
-      const sx = (quadrant % 2) * 512, sy = Math.floor(quadrant / 2) * 512;
+      const cell = ART.players.naturalWidth / 2;
+      const sx = (quadrant % 2) * cell, sy = Math.floor(quadrant / 2) * cell;
       const dw = 116 * s, dh = 154 * s;
       ctx.save();
       ctx.globalAlpha = .98;
       ctx.translate(sway, -bob);
-      ctx.drawImage(ART.players, sx, sy, 512, 512, x - dw / 2, y - dh, dw, dh);
+      ctx.drawImage(ART.players, sx, sy, cell, cell, x - dw / 2, y - dh, dw, dh);
       ctx.restore();
       return;
     }
@@ -585,5 +691,5 @@ const Yards = (() => {
     Save.data.selectedYard = saveSel;
   }
 
-  return { theme, ball, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, YARDS, BALLS };
+  return { theme, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, drawCourtLines, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, YARDS, BALLS };
 })();

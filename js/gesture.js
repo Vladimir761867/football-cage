@@ -3,6 +3,8 @@ class Gesture {
   constructor(canvas) {
     this.canvas = canvas;
     this.active = false;
+    this.enabled = true;
+    this.pointerId = null;
     this.start = null;   // {x,y,t}
     this.cur = null;     // {x,y}
     this.onStart = null; // (p) => {}
@@ -11,17 +13,20 @@ class Gesture {
     this._down = this._down.bind(this);
     this._move = this._move.bind(this);
     this._up = this._up.bind(this);
+    this._cancel = this._cancel.bind(this);
     canvas.addEventListener('pointerdown', this._down);
     canvas.addEventListener('pointermove', this._move);
     canvas.addEventListener('pointerup', this._up);
-    canvas.addEventListener('pointercancel', this._up);
+    canvas.addEventListener('pointercancel', this._cancel);
   }
   _pos(e) {
     const r = this.canvas.getBoundingClientRect();
-    return { x: (e.clientX - r.left) * (this.canvas.width / r.width),
-             y: (e.clientY - r.top) * (this.canvas.height / r.height) };
+    return { x: (e.clientX - r.left) * ((this.canvas.logicalWidth || this.canvas.width) / r.width),
+             y: (e.clientY - r.top) * ((this.canvas.logicalHeight || this.canvas.height) / r.height) };
   }
   _down(e) {
+    if (!this.enabled || this.active || (e.button !== undefined && e.button !== 0)) return;
+    this.pointerId = e.pointerId;
     e.preventDefault();
     this.canvas.setPointerCapture && this.canvas.setPointerCapture(e.pointerId);
     const p = this._pos(e);
@@ -31,13 +36,13 @@ class Gesture {
     this.onStart && this.onStart(p);
   }
   _move(e) {
-    if (!this.active) return;
+    if (!this.active || e.pointerId !== this.pointerId) return;
     e.preventDefault();
     this.cur = this._pos(e);
     this.onMove && this.onMove(this.drag());
   }
   _up(e) {
-    if (!this.active) return;
+    if (!this.active || e.pointerId !== this.pointerId) return;
     e.preventDefault();
     this.active = false;
     this.cur = this._pos(e);
@@ -45,6 +50,12 @@ class Gesture {
     // короткий тап = отмена прицеливания (по ГДД)
     this.onEnd && this.onEnd(d.len < 18 ? null : d);
     this.start = null; this.cur = null;
+    this.pointerId = null;
+  }
+  _cancel(e) {
+    if (e && e.pointerId !== this.pointerId) return;
+    if (this.active && this.onEnd) this.onEnd(null);
+    this.active = false; this.start = null; this.cur = null; this.pointerId = null;
   }
   drag() {
     const dx = this.cur.x - this.start.x, dy = this.cur.y - this.start.y;
@@ -59,7 +70,7 @@ class Gesture {
     c.removeEventListener('pointerdown', this._down);
     c.removeEventListener('pointermove', this._move);
     c.removeEventListener('pointerup', this._up);
-    c.removeEventListener('pointercancel', this._up);
+    c.removeEventListener('pointercancel', this._cancel);
   }
 }
 
@@ -81,6 +92,7 @@ const U = {
     const len = U.clamp(d.len, 0, maxLen);
     const ex = d.sx + Math.cos(d.angle) * len, ey = d.sy + Math.sin(d.angle) * len;
     ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.8)'; ctx.shadowBlur = 3;
     ctx.strokeStyle = color || 'rgba(255,255,255,.9)';
     ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.setLineDash([12, 10]);
     ctx.beginPath(); ctx.moveTo(d.sx, d.sy); ctx.lineTo(ex, ey); ctx.stroke();

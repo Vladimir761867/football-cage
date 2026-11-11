@@ -12,6 +12,7 @@
   let hintTimer = 0, toastTimer = 0;
   let difficulty = 'normal';
   let opponentCount = 1;
+  let paused = false, artRevision = 0;
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -81,6 +82,8 @@
   };
 
   function startMode(id) {
+    Yards.syncBallToYard();
+    paused = false;
     lastModeId = id;
     nav('match');
     $('#match-title').textContent = MODES[id].title;
@@ -91,19 +94,26 @@
     canvas.width = Math.round(r.width * dpr);
     canvas.height = Math.round(r.height * dpr);
     const ctx = canvas.getContext('2d');
+    // Игровые размеры не зависят от плотности пикселей экрана.
+    const W = canvas.logicalWidth = 520;
+    const H = canvas.logicalHeight = W * r.height / r.width;
+    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
     if (gesture) gesture.destroy();
     gesture = new Gesture(canvas);
     const bgCache = {};
     const env = {
-      canvas, ctx, W: canvas.width, H: canvas.height, gesture, hud, difficulty, opponentCount,
+      canvas, ctx, W, H, gesture, hud, difficulty, opponentCount,
       bgFor(key, painter) {
-        if (!bgCache[key]) {
+        if (!bgCache[key] || bgCache[key].revision !== artRevision) {
           const oc = document.createElement('canvas');
           oc.width = canvas.width; oc.height = canvas.height;
-          painter(oc.getContext('2d'));
+          const background = oc.getContext('2d');
+          background.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+          painter(background);
+          oc.revision = artRevision;
           bgCache[key] = oc;
         }
-        ctx.drawImage(bgCache[key], 0, 0);
+        ctx.drawImage(bgCache[key], 0, 0, W, H);
       },
       finish(result) {
         stopLoop();
@@ -120,7 +130,7 @@
     const now = performance.now();
     const dt = Math.min(.05, (now - lastT) / 1000);
     lastT = now;
-    if (!activeMode) return;
+    if (!activeMode || paused || document.hidden) return;
     activeMode.update(dt);
     if (!activeMode) return; // finish мог сработать внутри update
     activeMode.draw(activeMode.env.ctx);
@@ -177,7 +187,7 @@
           b.className = 'btn ' + (selected ? 'btn-paper' : 'btn-green');
           b.textContent = selected ? '✓ Выбран' : 'Выбрать';
           b.disabled = selected;
-          b.onclick = () => { Sound.ui(); Save.data.selectedYard = y.id; Save.save(); renderShop(); paintBg('#shop-bg'); };
+          b.onclick = () => { Sound.ui(); Save.data.selectedYard = y.id; Yards.syncBallToYard(); renderShop(); paintBg('#shop-bg'); };
           actions.appendChild(b);
         } else {
           const price = document.createElement('div');
@@ -194,7 +204,12 @@
         requestAnimationFrame(() => Yards.paintPreview(pv, y.id));
       });
     } else {
-      Object.values(BALLS).forEach(bl => {
+      Yards.syncBallToYard();
+      const note = document.createElement('p');
+      note.className = 'ball-set-note';
+      note.textContent = `Мячи: ${Yards.ball().era} · 3 варианта. Эпоха меняется вместе с двором. Выбор для каждой эпохи сохраняется.`;
+      list.appendChild(note);
+      Yards.ballsForEra().forEach(bl => {
         const owned = Save.data.ownedBalls.includes(bl.id);
         const selected = Save.data.selectedBall === bl.id;
         const row = document.createElement('div');
@@ -248,7 +263,7 @@
     $('#confirm-buy').onclick = () => {
       Save.data.ownedYards.push(y.id);
       Save.data.selectedYard = y.id;
-      Save.save();
+      Yards.syncBallToYard();
       Sound.buy();
       closeModal();
       renderShop(); paintBg('#shop-bg');
@@ -261,12 +276,20 @@
 
   /* ---------- модалки ---------- */
   function modal(html, onClose) {
+    if (current === 'match') {
+      paused = true;
+      if (gesture) { gesture._cancel(); gesture.enabled = false; }
+    }
     const wrap = $('#modal-wrap');
     $('#modal-box').innerHTML = html;
     wrap.classList.remove('hidden');
     $$('#modal-box [data-close]').forEach(b => b.onclick = () => { closeModal(); onClose && onClose(); });
   }
-  function closeModal() { $('#modal-wrap').classList.add('hidden'); }
+  function closeModal() {
+    $('#modal-wrap').classList.add('hidden');
+    paused = false; lastT = performance.now();
+    if (gesture) gesture.enabled = true;
+  }
   $('#modal-wrap').addEventListener('click', e => { if (e.target === $('#modal-wrap')) closeModal(); });
 
   function settingsModal() {
@@ -276,7 +299,7 @@
       <h3>Настройки</h3>
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro"></button></div>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 11.11.2026 · 7</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 11.11.2026 · 8</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -337,8 +360,13 @@
 
   // Перерисовываем меню, когда фоновые изображения догрузились.
   window.addEventListener('art-ready', () => {
+    artRevision++;
     if (current !== 'match') nav(current);
   });
 
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && current === 'match' && !paused) pauseModal();
+  });
+  Yards.syncBallToYard();
   nav('home');
 })();

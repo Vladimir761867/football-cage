@@ -10,8 +10,10 @@ class DogMode {
       hard:   { dogs: 2, passers: 5, steal: .39, speed: 1.9, cover: 70, wait: .55 }
     }[difficulty];
     this.difficulty = difficulty;
-    this.court = { x: W * .09, y: H * .2, w: W * .82, h: H * .64 };
-    this.center = { x: W * .5, y: H * .51 };
+    this.court = Yards.theme().atlas
+      ? { x: W * .07, y: H * .53, w: W * .86, h: H * .35 }
+      : { x: W * .09, y: H * .2, w: W * .82, h: H * .64 };
+    this.center = { x: W * .5, y: this.court.y + this.court.h * .5 };
     this.passers = this._makePassers(this.cfg.passers);
     this.dogs = Array.from({ length: this.cfg.dogs }, (_, i) => ({
       x: this.center.x + (i ? 28 : -18), y: this.center.y + (i ? 12 : -8),
@@ -59,7 +61,7 @@ class DogMode {
   _makePassers(count) {
     const cx = this.center.x, cy = this.center.y, rx = this.court.w * .35, ry = this.court.h * .34;
     return Array.from({ length: count }, (_, i) => {
-      const a = -Math.PI / 2 + i * Math.PI * 2 / count;
+      const a = Math.PI / 2 + i * Math.PI * 2 / count;
       const x = cx + Math.cos(a) * rx, y = cy + Math.sin(a) * ry;
       return { x, y, baseX: x, baseY: y, phase: i * .7 };
     });
@@ -121,7 +123,7 @@ class DogMode {
   _nextHolder() {
     const alive = this._receivers();
     if (!this.active[0]) { this._finish(false); return; }
-    if (alive.length <= 1) { this._finish(true); return; }
+    if (this.active.filter(Boolean).length <= 1) { this._finish(true); return; }
     this.holder = alive[Math.floor(Math.random() * alive.length)];
     this.state = 'aim';
     this.thinkT = this.cfg.wait;
@@ -188,17 +190,17 @@ class DogMode {
     const target = recs[Math.floor(Math.random() * recs.length)];
     const from = this.passers[this.holder], to = this.passers[target];
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    const fake = { angle, len: Math.min(this.env.W, this.env.H) * (.5 + Math.random() * .24) };
-    const oldRandom = Math.random;
+    const fake = { angle, len: Math.min(this.env.W, this.env.H) * (.20 + Math.random() * .12) };
     // Bot is reliable, but tournament still allows the dog to read a pass.
     this._pass(fake);
-    if (this.fly && this.difficulty === 'easy' && this.fly.outcome === 'steal' && Math.random() < .35) this.fly.outcome = 'ok';
-    void oldRandom;
+    if (this.fly && this.difficulty === 'easy' && this.fly.outcome === 'steal' && Math.random() < .35) {
+      this.fly.outcome = 'ok'; this.fly.to = { ...to };
+    }
   }
 
   draw(ctx) {
     const { W, H } = this.env;
-    Yards.paintCourt(ctx, W, H, this.court);
+    this.env.bgFor('court', bg => { Yards.paintCourt(bg, W, H, this.court); Yards.drawCourtLines(bg, this.court); });
     const pulse = 1 + Math.sin(performance.now() / 180) * .08;
     this.passers.forEach((n, i) => {
       if (!this.active[i]) return;
@@ -226,7 +228,7 @@ class DogMode {
     } else {
       const n = this.passers[this.holder]; bx = n.x + 17; by = n.y - 8;
     }
-    Yards.drawBall(ctx, bx, by, 12);
+    Yards.drawBall(ctx, bx, by, 12, undefined, this.state === 'fly');
     if (this.aimDrag) { U.drawAim(ctx, this.aimDrag, 'rgba(255,255,255,.95)'); U.drawPower(ctx, this.aimDrag, Math.min(W, H) * .38); }
   }
 

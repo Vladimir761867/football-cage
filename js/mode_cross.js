@@ -6,8 +6,8 @@ class CrossMode {
     const { W, H } = env;
     const atlasCourt = Boolean(Yards.theme().atlas);
     const goalW = atlasCourt ? Math.min(W * .65, H * .22) : W * .6;
-    this.goal = { x: (W - goalW) / 2, y: H * (atlasCourt ? .49 : .39),
-      w: goalW, h: H * (atlasCourt ? .14 : .2) };
+    this.goal = Yards.goalGeometry(W, H, { x: (W - goalW) / 2, y: H * .39,
+      w: goalW, h: H * .2 });
     this.players = Array.from({ length: 4 }, (_, i) => ({
       x: W * (.18 + i * .21), y: H * (.68 + (i % 2) * .07),
       tx: W * (.18 + i * .21), ty: H * (.68 + (i % 2) * .07), phase: i * 1.7,
@@ -25,8 +25,8 @@ class CrossMode {
     this.pendingKeeper = null;
     this.landing = { x: W * .5, y: H * .67 };
     this.dive = 0;
-    this.keeperX = W * .5;
-    this.keeperTarget = W * .5;
+    this.keeperX = this.goal.x + this.goal.w / 2;
+    this.keeperTarget = this.keeperX;
     this.bestMoment = '';
     this.finished = false;
     env.hud.setPills([
@@ -168,14 +168,15 @@ class CrossMode {
   }
   draw(ctx) {
     const { W, H } = this.env;
-    Yards.paintGoalScene(ctx, W, H, this.goal);
+    this.env.bgFor('goal', bg => Yards.paintGoalScene(bg, W, H, this.goal));
     if (!Yards.theme().atlas) Yards.drawGoalFrame(ctx, this.goal);
-    this.players.forEach((p, i) => {
+    this.players.map((p, i) => ({p, i})).sort((a, b) => a.p.y - b.p.y).forEach(({p, i}) => {
       const keeper = i === this.keeperIndex;
-      Yards.drawPlayer(ctx, p.x, p.y, keeper ? 1.05 : 1.1,
+      Yards.drawPlayer(ctx, p.x, p.y, keeper ? Math.min(1.35, this.goal.h * .65 / 89) : 1.1,
         keeper ? '#caa23c' : ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i],
         keeper ? 'keeper' : 'field',
-        { phase: p.phase, moving: !keeper || this.dive !== 0, dive: keeper ? this.dive : 0,
+        { phase: p.phase, moving: Math.hypot(p.tx - p.x, p.ty - p.y) > 3,
+          facing: p.tx - p.x < -3 ? -1 : 1, dive: keeper ? this.dive : 0,
           kick: this.state === 'shot' && i === this.shooterIndex });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '700 13px Rubik'; ctx.textAlign = 'center';
       ctx.fillText(this._name(i) + (keeper ? ' 🧤' : ''), p.x, p.y + 17);
@@ -185,12 +186,12 @@ class CrossMode {
       ctx.strokeStyle = t >= .54 && t <= .78 ? '#ffd24d' : 'rgba(255,255,255,.7)';
       ctx.lineWidth = 4; ctx.beginPath();
       ctx.ellipse(this.landing.x, this.landing.y, 30 - t * 14, 14 - t * 5, 0, 0, 7); ctx.stroke();
-      const b = this._ballPos(); Yards.drawBall(ctx, b.x, b.y, 11 + t * 3);
+      const b = this._ballPos(); Yards.drawBall(ctx, b.x, b.y, 11 + t * 3, undefined, true);
     }
     if (this.state === 'shot' && this.shot) {
       const f = this.shot, t = U.easeOut(U.clamp(f.t, 0, 1));
       Yards.drawBall(ctx, U.lerp(f.from.x, f.to.x, t),
-        U.lerp(f.from.y, f.to.y, t) - Math.sin(t * Math.PI) * 24, 12);
+        U.lerp(f.from.y, f.to.y, t) - Math.sin(t * Math.PI) * 24, 12, undefined, true);
     }
   }
   _finish() {

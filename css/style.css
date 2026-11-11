@@ -212,3 +212,24 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--night)
   .btn-big{font-size:20px;padding:13px;}
   .shop-card-preview{height:110px;}
 }
+
+/* Размеры телефона: читаемые подписи и удобные области нажатия. */
+.screen-inner{min-width:0;width:100%;}
+.hud-score-row{gap:6px;}
+.hud-pill{min-width:0;flex:1;max-width:92px;}
+.hud-pill .lbl{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.difficulty-btn,.opponents-btn,.yard-era-btn,.shop-tab{min-height:44px;}
+.ball-set-note{font-size:13px;line-height:1.5;padding:12px 14px;border-radius:12px;background:rgba(10,20,30,.82);color:#fff3d4;}
+.ball-info{min-width:0;}
+.ball-row{gap:10px;padding:12px;flex-wrap:wrap;}
+.ball-row .btn{min-height:44px;}
+.ball-canvas{width:60px;height:60px;}
+.ball-name{font-size:14px;}
+.ball-era{line-height:1.5;margin-top:4px;}
+.match-hint{width:88%;max-width:400px;font-size:19px;padding:8px 12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);}
+.match-toast{top:22%;width:90%;text-align:center;font-size:30px;}
+@media(max-width:380px){
+  .hud-pill .val{font-size:18px;}
+  .hud-pill .lbl{font-size:10px;}
+  .ball-row .btn{margin-left:auto;}
+}

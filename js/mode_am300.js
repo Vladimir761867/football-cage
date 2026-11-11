@@ -12,8 +12,8 @@ class Am300Mode {
     }[this.difficulty];
     const atlasCourt = Boolean(Yards.theme().atlas);
     const goalW = atlasCourt ? Math.min(W * .65, H * .22) : W * .72;
-    this.goal = { x: (W - goalW) / 2, y: H * (atlasCourt ? .49 : .42),
-      w: goalW, h: H * (atlasCourt ? .14 : .24) };
+    this.goal = Yards.goalGeometry(W, H, { x: (W - goalW) / 2, y: H * .42,
+      w: goalW, h: H * .24 });
     this.ballPos = { x: W / 2, y: H * .82 };
     this.you = 0;
     this.opponents = Array.from({ length: env.opponentCount ?? 1 }, (_, i) => ({ name: `Игрок ${i + 2}`, score: 0 }));
@@ -28,7 +28,7 @@ class Am300Mode {
     this.botT = 0;
     this.bestMoment = ''; this.bestVal = 0;
     this.maxDrag = H * .5;
-    this.keeper = { x: W * .5, phase: 0, dive: 0, diveT: 0 };
+    this.keeper = { x: this.goal.x + this.goal.w / 2, phase: 0, dive: 0, diveT: 0 };
 
     env.hud.setPills([
       { id: 'you', lbl: 'Ты', val: 0 },
@@ -125,11 +125,7 @@ class Am300Mode {
     this.env.hud.setPill('you', this.you);
     this.env.hud.setPill('balls', this.ballsLeft);
     this.state = 'impact';
-    setTimeout(() => {
-      if (this.state !== 'impact') return;
-      if (this.ballsLeft <= 0) this._startBotTurn();
-      else this.state = 'aim';
-    }, 650);
+    this.impactDelay = .65;
     this.env.hud.hideHintSoon();
   }
 
@@ -150,6 +146,13 @@ class Am300Mode {
   }
 
   update(dt) {
+    if (this.state === 'impact') {
+      this.impactDelay -= dt;
+      if (this.impactDelay <= 0) {
+        if (this.ballsLeft <= 0) this._startBotTurn();
+        else this.state = 'aim';
+      }
+    }
     this.oscT += dt;
     this.keeper.phase += dt * this.cfg.keeperSpeed;
     const patrolX = this.goal.x + this.goal.w * (.5 + Math.sin(this.keeper.phase * 1.3) * .30);
@@ -198,7 +201,7 @@ class Am300Mode {
 
   draw(ctx) {
     const { W, H } = this.env;
-    Yards.paintGoalScene(ctx, W, H, this.goal);
+    this.env.bgFor('goal', bg => Yards.paintGoalScene(bg, W, H, this.goal));
     const g = this.goal, topY = g.y - g.h;
 
     // зоны-подсказки
@@ -214,7 +217,7 @@ class Am300Mode {
     ctx.restore();
     if (!Yards.theme().atlas) Yards.drawGoalFrame(ctx, g);
     // Вратарь двигается по линии и на высокой сложности закрывает часть ворот.
-    Yards.drawPlayer(ctx, this.keeper.x, g.y + 4, 1.1, '#caa23c', 'keeper', {
+    Yards.drawPlayer(ctx, this.keeper.x, g.y + 4, Math.min(1.35, g.h * .65 / 89), '#caa23c', 'keeper', {
       phase: performance.now() / 260,
       moving: true, dive: this.keeper.dive
     });
@@ -223,12 +226,12 @@ class Am300Mode {
       const px = W * (.15 + i * .35);
       const py = H * .72;
       Yards.drawPlayer(ctx, px, py, .72, ['#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field',
-        { phase: performance.now() / 260 + i, moving: true });
+        { phase: this.oscT + i, moving: false });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '700 12px Rubik'; ctx.textAlign = 'center';
       ctx.fillText(p.name, px, py + 12);
     });
     Yards.drawPlayer(ctx, this.ballPos.x - W * .16, this.ballPos.y + 20, .9,
-      '#3f7fba', 'field', { phase: performance.now() / 300, moving: true,
+      '#3f7fba', 'field', { phase: this.oscT, moving: false,
         kick: this.state === 'fly' });
     // подписи целей
     ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '700 12px Rubik'; ctx.textAlign = 'center';
@@ -260,7 +263,7 @@ class Am300Mode {
       const f = this.fly, tt = U.easeOut(U.clamp(f.t, 0, 1));
       const x = U.lerp(f.from.x, f.to.x, tt);
       const y = U.lerp(f.from.y, f.to.y, tt) - Math.sin(tt * Math.PI) * 70;
-      Yards.drawBall(ctx, x, y, U.lerp(15, 8, tt));
+      Yards.drawBall(ctx, x, y, U.lerp(15, 8, tt), undefined, true);
     }
     // точка попадания
     if (this.impactFx) {
@@ -280,7 +283,7 @@ class Am300Mode {
     ctx.fillStyle = '#5a5f6a'; ctx.fillRect(bx, by, bw, bh);
     // золотая зона — на турнире она заметно уже
     ctx.fillStyle = '#ffd24d';
-    const half = this.cfg.window;
+    const half = this.cfg.window / 2;
     ctx.fillRect(bx + bw * (.5 - half), by, bw * half * 2, bh);
     // бегунок
     const ph = this._timing();

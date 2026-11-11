@@ -10,13 +10,16 @@ class SquareMode {
       normal: { receive: .74, botDelay: .30, botAcc: .84, angle: .52 },
       hard:   { receive: .54, botDelay: .22, botAcc: .94, angle: .40 }
     }[difficulty];
-    this.court = { x: W * .09, y: H * .2, w: W * .82, h: H * .62 };
+    const photographic = !!Yards.theme().atlas;
+    this.court = photographic
+      ? { x: W * .07, y: H * .53, w: W * .86, h: H * .35 }
+      : { x: W * .09, y: H * .2, w: W * .82, h: H * .62 };
     const c = this.court;
     this.nodes = [
-      { x: c.x + c.w * .25, y: c.y + c.h * .25, phase: 0 },
-      { x: c.x + c.w * .75, y: c.y + c.h * .25, phase: .8 },
-      { x: c.x + c.w * .75, y: c.y + c.h * .75, phase: 1.6 },
-      { x: c.x + c.w * .25, y: c.y + c.h * .75, phase: 2.4 }
+      { x: c.x + c.w * .25, y: c.y + c.h * .75, phase: 0 },
+      { x: c.x + c.w * .75, y: c.y + c.h * .75, phase: .8 },
+      { x: c.x + c.w * .75, y: c.y + c.h * .25, phase: 1.6 },
+      { x: c.x + c.w * .25, y: c.y + c.h * .25, phase: 2.4 }
     ];
     this.errors = [0, 0, 0, 0];
     this.active = [true, true, true, true];
@@ -37,7 +40,7 @@ class SquareMode {
       { id: 'p4', lbl: 'Игрок 4', val: '0/10' }
     ]);
     env.hud.setTimer('150');
-    env.hud.hint('Твоя четверть — верхняя левая. Отбей мяч до второго отскока');
+    env.hud.hint('Ты снизу слева. Короткий свайп к партнёру — до второго отскока');
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
@@ -101,11 +104,11 @@ class SquareMode {
       this._selectBotHolder();
       return;
     }
+    if (this.holder === 0) this.score++;
     this.holder = f.target;
     this.state = 'aim';
     this.receiveT = 0;
     this.bounces = 0;
-    this.score++;
     if (this.holder !== 0) this.env.hud.hint(`Игрок ${this.holder + 1}: отбивает мяч…`);
   }
 
@@ -124,13 +127,13 @@ class SquareMode {
     const from = this.nodes[this.holder], to = this.nodes[target];
     const accurate = Math.random() < this.cfg.botAcc;
     const angle = Math.atan2(to.y - from.y, to.x - from.x) + (accurate ? 0 : (Math.random() - .5) * .85);
-    this._hit({ angle, len: Math.min(this.env.W, this.env.H) * (accurate ? .55 : .22) });
+    this._hit({ angle, len: Math.min(this.env.W, this.env.H) * (accurate ? .25 : .06) });
   }
 
   update(dt) {
     this.timeLeft -= dt;
     this.env.hud.setTimer(Math.max(0, Math.ceil(this.timeLeft)));
-    if (this.timeLeft <= 0) { this._finish(this.active[0]); return; }
+    if (this.timeLeft <= 0) { this._finish(false, true); return; }
     if (this.state === 'aim') {
       this.receiveT += dt;
       if (this.holder !== 0 && this.receiveT >= this.cfg.botDelay) this._botHit();
@@ -153,21 +156,15 @@ class SquareMode {
 
   draw(ctx) {
     const { W, H } = this.env;
-    Yards.paintCourt(ctx, W, H, this.court);
-    const c = this.court;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(253,247,232,.65)'; ctx.lineWidth = 3; ctx.setLineDash([10, 8]);
-    ctx.beginPath(); ctx.moveTo(c.x + c.w / 2, c.y); ctx.lineTo(c.x + c.w / 2, c.y + c.h); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(c.x, c.y + c.h / 2); ctx.lineTo(c.x + c.w, c.y + c.h / 2); ctx.stroke();
-    ctx.setLineDash([]); ctx.restore();
-    this.nodes.forEach((n, i) => {
+    this.env.bgFor('court', bg => { Yards.paintCourt(bg, W, H, this.court); Yards.drawCourtLines(bg, this.court, true); });
+    this.nodes.map((n, i) => ({n, i})).sort((a, b) => a.n.y - b.n.y).forEach(({n, i}) => {
       if (!this.active[i]) return;
       const holder = i === this.holder;
       if (holder) {
         ctx.strokeStyle = i === 0 ? 'rgba(130,230,90,.95)' : 'rgba(255,210,77,.8)';
         ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(n.x, n.y - 15, 28 + Math.sin(performance.now() / 190) * 2, 0, 7); ctx.stroke();
       }
-      Yards.drawPlayer(ctx, n.x, n.y, 1.05, ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field', { phase: n.phase + performance.now() / 310, moving: true });
+      Yards.drawPlayer(ctx, n.x, n.y, i < 2 ? 1.05 : .91, ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field', { phase: n.phase + performance.now() / 310, moving: false });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '900 13px Rubik'; ctx.textAlign = 'center';
       ctx.fillText(i === 0 ? 'ТЫ' : `${i + 1}`, n.x, n.y + 15);
       ctx.fillStyle = this.errors[i] >= 7 ? '#ff8d7a' : '#ffd24d';
@@ -181,18 +178,18 @@ class SquareMode {
     } else {
       const n = this.nodes[this.holder]; bx = n.x + 17; by = n.y - 8;
     }
-    Yards.drawBall(ctx, bx, by, 12);
+    Yards.drawBall(ctx, bx, by, 12, undefined, this.state === 'fly');
     if (this.aimDrag) { U.drawAim(ctx, this.aimDrag, 'rgba(255,255,255,.95)'); U.drawPower(ctx, this.aimDrag, Math.min(W, H) * .37); }
   }
 
-  _finish(won) {
+  _finish(won, timedOut = false) {
     const newBest = Save.setBest('square', this.score);
     const coins = this.score * 5 + (won ? 30 : 0) + (newBest ? 15 : 0);
     Save.addCoins(coins);
     this.env.finish({
-      title: won ? 'Остался последним!' : 'Ты выбыл',
+      title: timedOut ? 'Время вышло' : won ? 'Остался последним!' : 'Ты выбыл',
       score: `${this.score} точных отбиваний`,
-      sub: won ? 'Все остальные набрали по 10 штрафов' : 'Два отскока в своей части — штрафное очко',
+      sub: timedOut ? 'Партия завершена по времени — победитель не определён' : won ? 'Все остальные набрали по 10 штрафов' : 'Два отскока в своей части — штрафное очко',
       moment: this.lastMistake ? '★ Последнее событие: ' + this.lastMistake : '', coins, newBest
     });
   }
