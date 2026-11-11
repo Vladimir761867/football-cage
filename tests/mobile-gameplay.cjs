@@ -85,10 +85,10 @@ test('court paint changes with background brightness and uses equal line widths'
     const widths=[];
     const ctx = new Proxy({ getTransform:()=>({a:1,d:1}), getImageData:()=>({data:[brightness,brightness,brightness,255]}),
       stroke(){ colors.push(this.strokeStyle); widths.push(this.lineWidth); } }, {get:(o,k)=>k in o?o[k]:()=>{}});
-    Yards.drawCourtLines(ctx,{x:10,y:20,w:300,h:300},true);
-    assert.deepEqual(widths,[6,3]);
+    Yards.drawCourtMarks(ctx,[{x:10,y:20},{x:310,y:20},{x:310,y:320},{x:10,y:320}],{outer:true});
+    assert.deepEqual(widths,[6,6,6,6,3,3,3,3]);
   }
-  assert.equal(colors[1],'#fff3d4'); assert.equal(colors[3],'#243444');
+  assert.equal(colors[4],'#fff3d4'); assert.equal(colors[12],'#243444');
 });
 test('American impact delay advances only with simulation time, including on pause', () => {
   const { Am300Mode }=runtime(); const mode=new Am300Mode(env());

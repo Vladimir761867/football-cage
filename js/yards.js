@@ -118,10 +118,16 @@ const ART = {
   runnerGreen: new Image(),
   keeperReady: new Image(),
   keeperDive: new Image(),
+  runAtlas: { blue: new Image(), red: new Image(), green: new Image() },
+  kickBlue: new Image(),
+  kickRed: new Image(),
+  kickGreen: new Image(),
+  goalBlue: new Image(),
+  keeperAnim: new Image(),
   russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new Image()])),
   ballAtlas: new Image()
 };
-const ART_VERSION = '?v=20261111-7';
+const ART_VERSION = '?v=20261111-12';
 ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
 ART.classicSquare.src = 'assets/yard-classic-square.png' + ART_VERSION;
 ART.classicGoal.src = 'assets/yard-classic-goal.png' + ART_VERSION;
@@ -134,6 +140,14 @@ ART.runnerRed.src = 'assets/runner-red.webp' + ART_VERSION;
 ART.runnerGreen.src = 'assets/runner-green.webp' + ART_VERSION;
 ART.keeperReady.src = 'assets/keeper-ready.webp' + ART_VERSION;
 ART.keeperDive.src = 'assets/keeper-dive.webp' + ART_VERSION;
+ART.runAtlas.blue.src = 'assets/run-blue.webp' + ART_VERSION;
+ART.runAtlas.red.src = 'assets/run-red.webp' + ART_VERSION;
+ART.runAtlas.green.src = 'assets/run-green.webp' + ART_VERSION;
+ART.kickBlue.src = 'assets/kick-blue.webp' + ART_VERSION;
+ART.kickRed.src = 'assets/kick-red.webp' + ART_VERSION;
+ART.kickGreen.src = 'assets/kick-green.webp' + ART_VERSION;
+ART.goalBlue.src = 'assets/goal-blue.webp' + ART_VERSION;
+ART.keeperAnim.src = 'assets/keeper-anim.webp' + ART_VERSION;
 Object.entries(ART.russian).forEach(([code, img]) => { img.src = `assets/russia-${code}-triptych.webp` + ART_VERSION; });
 ART.ballAtlas.src = 'assets/balls-era-atlas.png' + ART_VERSION;
 Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.values(value))
@@ -188,6 +202,99 @@ const Yards = (() => {
     const scale = Math.max(w / sw, h / sh);
     const dw = sw * scale, dh = sh * scale;
     ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  }
+
+  /* ---------- геометрия нарисованных площадок ----------
+     Где на арт-фоне лежит начерченный квадрат и стоят ворота
+     (нормированные координаты изображения, сняты с макетов). */
+  const ART_GEO = {
+    classicSquare:  { quad: [[.144, .336], [.856, .336], [.978, .688], [.019, .688]] },
+    russia90Square: { quad: [[.145, .405], [.875, .402], [.995, .685], [.0, .688]] },
+    classicGoal:    { goal: { x: .215, w: .585, top: .305, bottom: .49 } },
+    russia90Goal:   { goal: { x: .165, w: .66, top: .335, bottom: .52 } }
+  };
+  function coverMap(img, w, h) {
+    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const sc = Math.max(w / sw, h / sh);
+    return { ox: (w - sw * sc) / 2, oy: (h - sh * sc) / 2, sx: sw * sc, sy: sh * sc };
+  }
+  // 4 экранных угла начерченного квадрата (TL, TR, BR, BL) или null
+  function courtQuad(w, h) {
+    const t = theme();
+    if (t.atlas) { // у триптихов квадрата на картинке нет — берём площадку на полу кадра
+      return [[.17, .53], [.83, .53], [.97, .88], [.03, .88]].map(([nx, ny]) => ({ x: nx * w, y: ny * h }));
+    }
+    const ru = isRussia90(t);
+    const img = ru ? ART.russia90Square : ART.classicSquare;
+    if (!ready(img)) return null;
+    const m = coverMap(img, w, h);
+    return ART_GEO[ru ? 'russia90Square' : 'classicSquare'].quad
+      .map(([nx, ny]) => ({ x: m.ox + nx * m.sx, y: m.oy + ny * m.sy }));
+  }
+  // Экранный прямоугольник нарисованных ворот {x, y(земля), w, h} или null
+  function artGoal(w, h) {
+    const t = theme();
+    if (t.atlas) return goalGeometry(w, h);
+    const ru = isRussia90(t);
+    const img = ru ? ART.russia90Goal : ART.classicGoal;
+    if (!ready(img)) return null;
+    const m = coverMap(img, w, h);
+    const g = ART_GEO[ru ? 'russia90Goal' : 'classicGoal'].goal;
+    return { x: m.ox + g.x * m.sx, y: m.oy + g.bottom * m.sy,
+             w: g.w * m.sx, h: (g.bottom - g.top) * m.sy };
+  }
+  // Точка внутри квадрата по (u,v) ∈ [0,1]² с учётом перспективы
+  function quadPoint(q, u, v) {
+    const lp = (a, b, t) => a + (b - a) * t;
+    const ax = lp(q[0].x, q[1].x, u), ay = lp(q[0].y, q[1].y, u);
+    const bx = lp(q[3].x, q[2].x, u), by = lp(q[3].y, q[2].y, u);
+    return { x: lp(ax, bx, v), y: lp(ay, by, v) };
+  }
+
+  // есть ли разметка квадрата на самой картинке (иначе её рисуем мы)
+  function courtHasChalk() {
+    const t = theme();
+    if (t.atlas) return false;
+    return ready(isRussia90(t) ? ART.russia90Square : ART.classicSquare);
+  }
+  // Меловая разметка по перспективе квадрата: контур (если его нет на арте),
+  // крест-линии и центральный круг. Яркая, с тёмной подложкой — видна на любом покрытии.
+  function drawCourtMarks(ctx, q, opts = {}) {
+    const P = (u, v) => quadPoint(q, u, v);
+    const path = pts => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); };
+    const lines = [];
+    if (opts.outer) lines.push([P(0, 0), P(1, 0), P(1, 1), P(0, 1), P(0, 0)]);
+    if (opts.ring) {
+      const ring = [];
+      for (let k = 0; k <= 48; k++) { const a = k / 48 * Math.PI * 2; ring.push(P(.5 + Math.cos(a) * .36, .5 + Math.sin(a) * .36)); }
+      lines.push(ring);
+    }
+    if (opts.cross !== false) {
+      lines.push([P(.5, 0), P(.5, 1)], [P(0, .5), P(1, .5)]);
+      const c = [];
+      for (let k = 0; k <= 40; k++) { const a = k / 40 * Math.PI * 2; c.push(P(.5 + Math.cos(a) * .11, .5 + Math.sin(a) * .11)); }
+      lines.push(c);
+    }
+    const xs = q.map(p => p.x), ys = q.map(p => p.y);
+    const colors = courtPalette(ctx, {x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs)-Math.min(...xs), h: Math.max(...ys)-Math.min(...ys)});
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([]);
+    ctx.strokeStyle = colors.edge; ctx.lineWidth = 6;
+    lines.forEach(l => { path(l); ctx.stroke(); });
+    ctx.strokeStyle = colors.paint; ctx.lineWidth = 3;
+    lines.forEach(l => { path(l); ctx.stroke(); });
+    ctx.restore();
+  }
+  // «эмоция» над головой: bubble с эмодзи
+  function drawEmote(ctx, x, y, s, emoji) {
+    ctx.save();
+    const r = 15 * s;
+    ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-4 * s, r - 2); ctx.lineTo(0, r + 8 * s); ctx.lineTo(5 * s, r - 3); ctx.closePath(); ctx.fill();
+    ctx.font = `${Math.round(20 * s)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(emoji, 0, 1);
+    ctx.restore();
   }
 
   function paintArt(ctx, w, h, img) {
@@ -408,7 +515,7 @@ const Yards = (() => {
   }
   // Выбираем краску по яркости уже нарисованного покрытия. Контрастный
   // кант сохраняет линии на пёстрых участках и бликах. Вызывается в кэше фона.
-  function drawCourtLines(ctx, court, quarters = false) {
+  function courtPalette(ctx, court) {
     const m = ctx.getTransform();
     let luminance = 0;
     for (const fx of [.15, .5, .85]) for (const fy of [.15, .5, .85]) {
@@ -416,15 +523,7 @@ const Yards = (() => {
       luminance += p[0] * .2126 + p[1] * .7152 + p[2] * .0722;
     }
     const dark = luminance / 9 > 145;
-    ctx.save(); ctx.setLineDash([]); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.rect(court.x, court.y, court.w, court.h);
-    if (quarters) {
-      ctx.moveTo(court.x + court.w / 2, court.y); ctx.lineTo(court.x + court.w / 2, court.y + court.h);
-      ctx.moveTo(court.x, court.y + court.h / 2); ctx.lineTo(court.x + court.w, court.y + court.h / 2);
-    }
-    ctx.lineWidth = 6; ctx.strokeStyle = dark ? 'rgba(255,255,255,.65)' : 'rgba(14,22,30,.65)'; ctx.stroke();
-    ctx.lineWidth = 3; ctx.strokeStyle = dark ? '#243444' : '#fff3d4'; ctx.stroke();
-    ctx.restore();
+    return { paint: dark ? '#243444' : '#fff3d4', edge: dark ? 'rgba(255,255,255,.65)' : 'rgba(14,22,30,.65)' };
   }
   function chalkCrown(ctx, x, y) {
     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 7, y - 14); ctx.lineTo(x + 14, y - 4);
@@ -615,6 +714,62 @@ const Yards = (() => {
     const moving = motion && motion.moving === true;
     const bob = moving ? (1 - Math.cos(phase * 2)) * .75 * s : Math.sin(phase * .4) * .35 * s;
     const sway = moving ? Math.sin(phase) * .8 * s : 0;
+    if (pose === 'keeper' && ready(ART.keeperAnim)) {
+      const img = ART.keeperAnim, n = 4, cw = img.naturalWidth / n, ch = img.naturalHeight;
+      const diving = motion && motion.dive;
+      const fi = diving ? 1 : motion && motion.catch ? 2 : 0;
+      const k = 120 * s / 216 * (diving ? 1.05 : 1);       // 216 — высота кадра стойки в атласе
+      const dw = cw * k, dh = ch * k;
+      ctx.save();
+      ctx.translate(x, y - (diving ? 18 * s : 0));
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      ctx.beginPath(); ctx.ellipse(0, diving ? 18 * s - 2 * s : -2 * s, dw * (diving ? .34 : .22), 6 * s, 0, 0, Math.PI * 2); ctx.fill();
+      if (!diving) { const t = performance.now() / 380; ctx.translate(Math.sin(t) * 3 * s, 0); ctx.rotate(Math.sin(t) * .02); }
+      if (diving && motion.dive > 0) ctx.scale(-1, 1);       // кадр прыжка нарисован влево
+      ctx.drawImage(img, fi * cw, 0, cw, ch, -dw / 2, -dh, dw, dh);
+      ctx.restore();
+      return;
+    }
+    if (pose !== 'keeper' && ready(ART.runAtlas.blue) && ready(ART.runAtlas.red) && ready(ART.runAtlas.green)) {
+      // Покадровая анимация: цикл бега (4 кадра), кадр удара (3 кадра, синий игрок).
+      const kind = color === '#c0392b' || color === '#d25743' ? 'red'
+        : color === '#7a9f4b' || color === '#5b9b69' ? 'green' : 'blue';
+      let img = ART.runAtlas[kind], n = 4, fi;
+      const kicking = motion && motion.kick;
+      const kickImg = kind === 'red' ? ART.kickRed : kind === 'green' ? ART.kickGreen : ART.kickBlue;
+      if (motion && motion.celebrate && kind === 'blue' && ready(ART.goalBlue)) {
+        img = ART.goalBlue; n = 3;
+        fi = Math.floor(performance.now() / 260) % 3;
+      } else if (kicking && ready(kickImg)) {
+        img = kickImg; n = 3;
+        const k = typeof motion.kick === 'number' && motion.kick > 0 && motion.kick <= 1 ? motion.kick : .5;
+        fi = Math.min(2, Math.floor(k * 3));
+      } else if (moving) {
+        fi = Math.floor(((phase / (Math.PI / 2)) % 4 + 4) % 4);
+      } else fi = 1;
+      const cw = img.naturalWidth / n, ch = img.naturalHeight;
+      const dh = 150 * s, dw = dh * cw / ch;
+      ctx.save();
+      ctx.translate(x, y - (moving ? Math.abs(Math.sin(phase)) * 1.5 * s : 0));
+      // тень под ногами
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      ctx.beginPath(); ctx.ellipse(0, -2 * s, dw * .26, 6 * s, 0, 0, Math.PI * 2); ctx.fill();
+      if (motion && motion.face === -1) ctx.scale(-1, 1);
+      if (moving && !kicking && !(motion && motion.celebrate)) {
+        // пыль из-под ног: три затухающих облачка позади бегущего
+        const t = ((phase / (Math.PI / 2)) % 1 + 1) % 1;
+        for (let i = 0; i < 3; i++) {
+          const k = (t + i / 3) % 1;
+          ctx.fillStyle = `rgba(190,165,130,${(1 - k) * .26})`;
+          ctx.beginPath();
+          ctx.ellipse(-dw * .12 - k * 26 * s, -3 * s - k * 9 * s, (3 + k * 7) * s, (2 + k * 4) * s, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.drawImage(img, fi * cw, 0, cw, ch, -dw / 2, -dh, dw, dh);
+      ctx.restore();
+      return;
+    }
     if (ready(ART.runner) && ready(ART.keeperReady) && ready(ART.keeperDive)) {
       const keeper = pose === 'keeper';
       const diving = keeper && motion && motion.dive;
@@ -629,8 +784,11 @@ const Yards = (() => {
       ctx.fillStyle = 'rgba(5,12,20,.34)';
       ctx.beginPath(); ctx.ellipse(x, y + 1, 20 * s, 5 * s, 0, 0, Math.PI * 2); ctx.fill();
       ctx.translate(x + sway, y - bob);
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      ctx.beginPath(); ctx.ellipse(0, -2 * s, dw * (diving ? .45 : .28), 6 * s, 0, 0, Math.PI * 2); ctx.fill();
+      if (keeper && !diving) { ctx.translate(Math.sin(performance.now() / 380) * 3 * s, 0); ctx.rotate(Math.sin(performance.now() / 380) * .03); }
       if (diving && motion.dive < 0) ctx.scale(-1, 1);
-      else if (!keeper && motion && motion.facing < 0) ctx.scale(-1, 1);
+      else if (!keeper && motion && motion.face === -1) ctx.scale(-1, 1);
       if (!keeper) ctx.rotate((moving ? Math.sin(phase) * .018 : 0) + (motion && motion.kick ? -.10 : 0));
       ctx.drawImage(img, -dw / 2, -dh, dw, dh);
       ctx.restore();
@@ -642,13 +800,14 @@ const Yards = (() => {
         : color === '#c0392b' ? 0
         : color === '#3f7fba' ? 1
         : 2;
-      const cell = ART.players.naturalWidth / 2;
-      const sx = (quadrant % 2) * cell, sy = Math.floor(quadrant / 2) * cell;
-      const dw = 116 * s, dh = 154 * s;
+      const qsz = ART.players.naturalWidth / 2;
+      const sx = (quadrant % 2) * qsz, sy = Math.floor(quadrant / 2) * qsz;
+      const dh = 150 * s, dw = dh; // квадранты листа квадратные
       ctx.save();
       ctx.globalAlpha = .98;
       ctx.translate(sway, -bob);
-      ctx.drawImage(ART.players, sx, sy, cell, cell, x - dw / 2, y - dh, dw, dh);
+      if (motion && motion.face === -1) { ctx.translate(x * 2, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(ART.players, sx, sy, qsz, qsz, x - dw / 2, y - dh, dw, dh);
       ctx.restore();
       return;
     }
@@ -691,5 +850,5 @@ const Yards = (() => {
     Save.data.selectedYard = saveSel;
   }
 
-  return { theme, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, drawCourtLines, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, YARDS, BALLS };
+  return { theme, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
 })();

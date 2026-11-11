@@ -1,13 +1,13 @@
-/* «Навес»: четыре участника на поле. Подача, удар, попытка вратаря отбить.
-   Промахнувшийся нападающий меняется местами с вратарём. */
+/* «Навес»: четыре участника. Комбинация: два паса по земле → навес → удар головой/с лёта.
+   Потерял мяч или промахнулся — идёшь в ворота и ловишь следующий удар. */
 class CrossMode {
   constructor(env) {
     this.env = env;
     const { W, H } = env;
     const atlasCourt = Boolean(Yards.theme().atlas);
     const goalW = atlasCourt ? Math.min(W * .65, H * .22) : W * .6;
-    this.goal = Yards.goalGeometry(W, H, { x: (W - goalW) / 2, y: H * .39,
-      w: goalW, h: H * .2 });
+    this.goal = Yards.artGoal(W, H) || { x: (W - goalW) / 2, y: H * .39,
+      w: goalW, h: H * .2 };
     this.players = Array.from({ length: 4 }, (_, i) => ({
       x: W * (.18 + i * .21), y: H * (.68 + (i % 2) * .07),
       tx: W * (.18 + i * .21), ty: H * (.68 + (i % 2) * .07), phase: i * 1.7,
@@ -15,7 +15,9 @@ class CrossMode {
     }));
     this.keeperIndex = 3;
     this.shooterIndex = 0;
-    this.serverIndex = 1;
+    this.serverIndex = 2;
+    this.combo = null;
+    this._lastGoal = false; this._lastSaved = false;
     this.serveN = 0;
     this.total = 12;
     this.state = 'wait';
@@ -37,6 +39,7 @@ class CrossMode {
     env.hud.setTimer('⚽');
     env.hud.hint('Навес: проведи к углу ворот. Промахнулся — идёшь в ворота');
     env.gesture.onEnd = d => {
+      if (this.state === 'combo' && d) { this._comboSwipe(d); return; }
       if (this.state !== 'serve' || !d) return;
       if (this.shooterIndex === 0) this._strike(d);
       else if (this.keeperIndex === 0) {
@@ -52,15 +55,26 @@ class CrossMode {
     const field = this._field();
     const pos = field.indexOf(this.shooterIndex);
     this.shooterIndex = field[(pos + 1 + field.length) % field.length];
-    this.serverIndex = field.find(i => i !== this.shooterIndex);
+    this._roles();
+  }
+  // S — нападающий, a — партнёр для первого паса, b — крайний (подаёт навес)
+  _roles() {
+    const S = this.shooterIndex, rest = this._field().filter(i => i !== S);
+    this.roles = { S, a: rest[0], b: rest[1] };
+    this.serverIndex = rest[1];
+  }
+  _slot(k) {
+    const { W, H } = this.env;
+    return { S: { x: W * .5, y: H * .75 }, a: { x: W * .2, y: H * .71 }, b: { x: W * .82, y: H * .67 } }[k];
   }
   _setPositions() {
-    const { W, H } = this.env;
+    if (!this.roles) this._roles();
+    const r = this.roles, serving = this.state === 'serve' || this.state === 'shot';
     this.players.forEach((p, i) => {
-      if (i === this.keeperIndex) { p.tx = this.keeperX; p.ty = this.goal.y + 7; }
-      else if (i === this.shooterIndex) { p.tx = this.landing.x - 22; p.ty = this.landing.y + 20; }
-      else if (i === this.serverIndex) { p.tx = W * .18; p.ty = H * .66; }
-      else { p.tx = W * .82; p.ty = H * .69; }
+      if (i === this.keeperIndex) { p.tx = this.keeperX; p.ty = this.goal.y + 7; return; }
+      const k = i === r.S ? 'S' : i === r.a ? 'a' : 'b';
+      if (serving && k === 'S') { p.tx = this.landing.x - 22; p.ty = this.landing.y + 20; }
+      else { const sl = this._slot(k); p.tx = sl.x; p.ty = sl.y; }
     });
   }
   _startServe() {
@@ -69,12 +83,48 @@ class CrossMode {
     this.env.hud.setPill('turn', `${this.serveN}/${this.total}`);
     const { W, H } = this.env;
     this.landing = { x: W * (.42 + Math.random() * .16), y: H * (.66 + Math.random() * .07) };
-    this._setPositions();
-    this.state = 'serve';
-    this.flight = { t: 0, dur: 1.6, from: { x: W * .18, y: H * .62 } };
+    this._roles();
+    const r = this.roles;
+    this.combo = { order: [r.S, r.a, r.b], step: 0, holder: r.S, ball: null, clock: 0, waitT: .55, limit: 2.6 };
+    this.state = 'combo';
     this.dive = 0;
     this.keeperTarget = this.goal.x + this.goal.w / 2;
-    this.env.hud.hint(this.shooterIndex === 0 ? 'Ты бьёшь: проведи к левому или правому углу!' :
+    this._setPositions();
+    this.env.hud.hint(r.S === 0 ? 'Сыграй в стенку: проведи пас партнёру, он отдаст на край — затем навес!' :
+      this.keeperIndex === 0 ? 'Ты в воротах: следи за комбинацией и лови удар' : `${this._name(r.S)} разыгрывает комбинацию`);
+  }
+  _comboTarget() { const c = this.combo; return this.players[c.order[c.step + 1]]; }
+  _comboPass() {
+    const c = this.combo, from = this.players[c.holder], to = this._comboTarget();
+    from.kickT = .22;
+    c.ball = { from: { x: from.x, y: from.y }, to: c.order[c.step + 1], t: 0, dur: .42 };
+    Sound.pass();
+  }
+  _comboSwipe(d) {
+    const c = this.combo;
+    if (!c || c.holder !== 0 || c.ball) return;
+    const from = this.players[0], to = this._comboTarget();
+    const ang = Math.atan2(to.y - from.y, to.x - from.x);
+    if (d.len < 22 || Math.abs(U.angDiff(d.angle, ang)) > .85) { this._comboFail('Неточный пас'); return; }
+    this._comboPass();
+  }
+  _comboFail(reason) {
+    const shooter = this.roles.S;
+    this.env.hud.toast(`${reason}. ${this._name(shooter)} — в ворота!`, 'bad');
+    Sound.miss();
+    this._lastGoal = false; this._lastSaved = false; this._lastShooter = shooter;
+    this.combo = null;
+    this.keeperIndex = shooter;
+    this.env.hud.setPill('keeper', this._name(this.keeperIndex));
+    this._nextAttacker();
+    this.state = 'wait'; this.waitT = .95;
+  }
+  _startCross() {
+    const b = this.players[this.roles.b];
+    b.kickT = .25;
+    this.state = 'serve';
+    this.flight = { t: 0, dur: 1.5, from: { x: b.x, y: b.y - 30 } };
+    this.env.hud.hint(this.shooterIndex === 0 ? 'Навес! Ударь в нужный момент: проведи к левому или правому углу!' :
       this.keeperIndex === 0 ? 'Ты в воротах: проведи в сторону удара!' : `${this._name(this.shooterIndex)} бьёт. Следи за навесом`);
     Sound.pass();
   }
@@ -110,6 +160,8 @@ class CrossMode {
     const points = saved ? 0 : potential;
     if (saved) reason = 'Вратарь отбил!';
     this.state = 'shot';
+    this._lastShooter = shooter; this._lastKeeper = keeper; this._lastGoal = !!points; this._lastSaved = saved;
+    this.players[shooter].kickT = .3;
     this.shot = {
       from: this._ballPos(), to: {
         x: this.goal.x + this.goal.w * (side < 0 ? .16 : .84),
@@ -137,6 +189,10 @@ class CrossMode {
   }
   update(dt) {
     if (this.finished) return;
+    // ворота из арт-фона, когда он загружен (точно по картинке)
+    if (!this._defGoal) this._defGoal = { ...this.goal };
+    const ag = Yards.artGoal(this.env.W, this.env.H);
+    this.goal = ag || this._defGoal;
     this.keeperX = U.lerp(this.keeperX, this.keeperTarget, 1 - Math.pow(.002, dt));
     this._setPositions();
     this.players.forEach(p => {
@@ -144,6 +200,24 @@ class CrossMode {
       p.y = U.lerp(p.y, p.ty, 1 - Math.pow(.0001, dt));
       p.phase += dt * 8;
     });
+    this.players.forEach(p => { if (p.kickT > 0) p.kickT -= dt; if (p.react > 0) p.react -= dt; });
+    if (this.state === 'combo' && this.combo) {
+      const c = this.combo;
+      if (c.ball) {
+        c.ball.t += dt / c.ball.dur;
+        if (c.ball.t >= 1) {
+          c.holder = c.ball.to; c.ball = null; c.step++; c.clock = 0; c.waitT = .4;
+          this.players[c.holder].react = .4;
+          if (c.step >= 2) this._startCross();
+        }
+      } else if (c.holder === 0) {
+        c.clock += dt;
+        if (c.clock > c.limit) this._comboFail('Долго держишь мяч');
+      } else {
+        c.waitT -= dt;
+        if (c.waitT <= 0) { if (Math.random() < .07) this._comboFail(`${this._name(c.holder)}: потеря мяча`); else this._comboPass(); }
+      }
+    }
     if (this.state === 'wait') {
       this.waitT -= dt;
       if (this.waitT <= 0) this._startServe();
@@ -169,18 +243,53 @@ class CrossMode {
   draw(ctx) {
     const { W, H } = this.env;
     this.env.bgFor('goal', bg => Yards.paintGoalScene(bg, W, H, this.goal));
-    if (!Yards.theme().atlas) Yards.drawGoalFrame(ctx, this.goal);
-    this.players.map((p, i) => ({p, i})).sort((a, b) => a.p.y - b.p.y).forEach(({p, i}) => {
+    if (!Yards.theme().atlas && !Yards.artGoal(W, H)) Yards.drawGoalFrame(ctx, this.goal);
+    const bp = this._currentBall();
+    const order = this.players.map((p, i) => i).sort((x, y) => this.players[x].y - this.players[y].y);
+    order.forEach(i => {
+      const p = this.players[i];
       const keeper = i === this.keeperIndex;
-      Yards.drawPlayer(ctx, p.x, p.y, keeper ? Math.min(1.35, this.goal.h * .65 / 89) : 1.1,
+      const persp = .78 + (p.y / H) * .5; // дальше — меньше
+      const s = keeper ? Math.min(1.35, this.goal.h * .65 / 89) : persp;
+      const face = bp ? (bp.x < p.x - 3 ? -1 : 1) : 1;           // все смотрят на мяч
+      const cm = this.combo;
+      if (this.state === 'combo' && cm && !cm.ball && cm.holder === i) {
+        // игрок с мячом: кольцо-таймер (твой — зелёное), и подсказка, кому пасовать
+        const left = i === 0 ? U.clamp(1 - cm.clock / cm.limit, 0, 1) : 1;
+        ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.ellipse(p.x, p.y + 3 * s, 32 * s, 12 * s, 0, 0, 7); ctx.stroke();
+        ctx.strokeStyle = left < .3 ? 'rgba(255,90,70,.98)' : i === 0 ? 'rgba(130,230,90,.98)' : 'rgba(255,210,77,.95)';
+        ctx.lineWidth = 4.5;
+        ctx.beginPath(); ctx.ellipse(p.x, p.y + 3 * s, 32 * s, 12 * s, 0, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2); ctx.stroke();
+        if (i === 0) {
+          const t = this._comboTarget(), pulse = 1 + Math.sin(performance.now() / 160) * .12;
+          ctx.strokeStyle = 'rgba(255,210,77,.95)'; ctx.lineWidth = 4; ctx.setLineDash([8, 6]);
+          ctx.beginPath(); ctx.ellipse(t.x, t.y + 3, 34 * pulse, 13 * pulse, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+        }
+      }
+      const inWait = this.state === 'wait';
+      Yards.drawPlayer(ctx, p.x, p.y, s,
         keeper ? '#caa23c' : ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i],
         keeper ? 'keeper' : 'field',
         { phase: p.phase, moving: Math.hypot(p.tx - p.x, p.ty - p.y) > 3,
-          facing: p.tx - p.x < -3 ? -1 : 1, dive: keeper ? this.dive : 0,
-          kick: this.state === 'shot' && i === this.shooterIndex });
+          face, dive: keeper ? this.dive : 0,
+          kick: (this.state === 'shot' && i === this.shooterIndex) || p.kickT > 0 ? (p.kickT > 0 ? Math.min(1, 1.01 - p.kickT / .25) : true) : false,
+          celebrate: inWait && this._lastGoal && i === this._lastShooter,
+          catch: inWait && ((this._lastSaved && i === this._lastKeeper) || (!this._lastGoal && i === this.keeperIndex)) });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '700 13px Rubik'; ctx.textAlign = 'center';
       ctx.fillText(this._name(i) + (keeper ? ' 🧤' : ''), p.x, p.y + 17);
+      // мимика: после удара
+      if (inWait && this.waitT > .1) {
+        let e = '';
+        if (this._lastGoal) e = i === this._lastShooter ? '😎' : i === this._lastKeeper ? '😩' : '👏';
+        else if (i === this._lastShooter) e = '😖'; else if (i === this._lastKeeper && this._lastSaved) e = '😤';
+        if (e) Yards.drawEmote(ctx, p.x, p.y - 150 * s, .8, e);
+      }
     });
+    if (this.state === 'combo' && this.combo) {
+      const cm = this.combo;
+      if (bp) Yards.drawBall(ctx, bp.x, bp.y, 11, undefined, !!cm.ball);
+    }
     if (this.state === 'serve') {
       const t = this.flight.t / this.flight.dur;
       ctx.strokeStyle = t >= .54 && t <= .78 ? '#ffd24d' : 'rgba(255,255,255,.7)';
@@ -193,6 +302,23 @@ class CrossMode {
       Yards.drawBall(ctx, U.lerp(f.from.x, f.to.x, t),
         U.lerp(f.from.y, f.to.y, t) - Math.sin(t * Math.PI) * 24, 12, undefined, true);
     }
+  }
+  _currentBall() {
+    if (this.state === 'combo' && this.combo) {
+      const c = this.combo;
+      if (c.ball) {
+        const to = this.players[c.ball.to], t = U.easeOut(U.clamp(c.ball.t, 0, 1));
+        return { x: U.lerp(c.ball.from.x, to.x, t), y: U.lerp(c.ball.from.y, to.y, t) - Math.sin(t * Math.PI) * 14 - 6 };
+      }
+      const h = this.players[c.holder];
+      return { x: h.x + 18, y: h.y - 6 };
+    }
+    if (this.state === 'serve' && this.flight) return this._ballPos();
+    if (this.state === 'shot' && this.shot) {
+      const f = this.shot, t = U.easeOut(U.clamp(f.t, 0, 1));
+      return { x: U.lerp(f.from.x, f.to.x, t), y: U.lerp(f.from.y, f.to.y, t) };
+    }
+    return null;
   }
   _finish() {
     if (this.finished) return;

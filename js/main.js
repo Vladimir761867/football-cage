@@ -299,7 +299,7 @@
       <h3>Настройки</h3>
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro"></button></div>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 11.11.2026 · 8</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 11.11.2026 · 13</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
