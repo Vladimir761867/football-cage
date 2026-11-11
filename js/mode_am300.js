@@ -115,6 +115,8 @@ class Am300Mode {
     }
     this.impactFx = { x: to.x, y: to.y, t: 0, pts, label };
     this.fly = null;
+    if (pts >= 50) this.flashT = .25;
+    if (pts >= 100) { this.slowT = .8; this.shakeT = .35; }
     if (pts >= 100) { Sound.goal(); this.env.hud.toast(`${label}! +${pts}`, 'gold'); }
     else if (pts >= 50) { Sound.post(); this.env.hud.toast(`${label}! +${pts}`, 'good'); }
     else if (pts > 0) { Sound.pass(); this.env.hud.toast(`+${pts}`, 'good'); }
@@ -150,6 +152,8 @@ class Am300Mode {
   }
 
   update(dt) {
+    if (this.slowT > 0) { this.slowT -= dt; dt *= .35; }
+    if (this.flashT > 0) this.flashT -= dt;
     // ворота из арт-фона, когда он загружен (цели совпадают с картинкой)
     if (!this._defGoal) this._defGoal = { ...this.goal };
     const ag = Yards.artGoal(this.env.W, this.env.H);
@@ -201,6 +205,26 @@ class Am300Mode {
   }
 
   draw(ctx) {
+    // «киношный» момент: на ударе в перекладину — замедление, наезд камеры и тряска
+    const k = Math.max(0, this.slowT || 0) / .8, fx = this.impactFx;
+    ctx.save();
+    if (fx && (k > 0 || this.shakeT > 0)) {
+      const { W, H } = this.env, z = 1 + .10 * Math.min(1, k * 1.4);
+      const sh = this.shakeT > 0 ? (this.shakeT -= 1 / 60, this.shakeT * 40) : 0;
+      ctx.translate(fx.x, fx.y); ctx.scale(z, z); ctx.translate(-fx.x, -fx.y);
+      ctx.translate((Math.random() - .5) * sh, (Math.random() - .5) * sh);
+    }
+    this._drawScene(ctx);
+    ctx.restore();
+    if (this.flashT > 0 && fx) {
+      const a = Math.min(1, this.flashT / .25), r = 40 + (1 - a) * 90;
+      const gr = ctx.createRadialGradient(fx.x, fx.y, 2, fx.x, fx.y, r);
+      gr.addColorStop(0, `rgba(255,240,190,${.85 * a})`); gr.addColorStop(1, 'rgba(255,240,190,0)');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(fx.x, fx.y, r, 0, 7); ctx.fill();
+    }
+  }
+
+  _drawScene(ctx) {
     const { W, H } = this.env;
     Yards.paintGoalScene(ctx, W, H, this.goal);
     const g = this.goal, topY = g.y - g.h;
