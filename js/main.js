@@ -306,5 +306,10 @@
     if (current !== 'match') nav(current);
   });
 
+  // Перерисовываем меню, когда фоновые изображения догрузились.
+  window.addEventListener('art-ready', () => {
+    if (current !== 'match') nav(current);
+  });
+
   nav('home');
 })();

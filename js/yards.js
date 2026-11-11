@@ -35,10 +35,50 @@ const BALLS = {
   neon20:    { id: 'neon20',    name: 'Неон, 2020-е',    era: '2020-е',   price: 300, c1: '#1d2430', c2: '#5df09a', style: 'neon' }
 };
 
+/* Живые фоновые ассеты. Если браузер ещё не успел их загрузить,
+   остаётся процедурный fallback ниже — игра не ждёт сеть. */
+const ART = {
+  classicMenu: new Image(),
+  classicSquare: new Image(),
+  classicGoal: new Image(),
+  russia90Menu: new Image(),
+  russia90Square: new Image(),
+  russia90Goal: new Image(),
+  players: new Image()
+};
+ART.classicMenu.src = 'assets/yard-classic-menu.png';
+ART.classicSquare.src = 'assets/yard-classic-square.png';
+ART.classicGoal.src = 'assets/yard-classic-goal.png';
+ART.russia90Menu.src = 'assets/yard-russia90-menu.png';
+ART.russia90Square.src = 'assets/yard-russia90-square.png';
+ART.russia90Goal.src = 'assets/yard-russia90-goal.png';
+ART.players.src = 'assets/players-sheet.png';
+Object.values(ART).forEach(img => img.addEventListener('load', () => window.dispatchEvent(new Event('art-ready'))));
+
 const Yards = (() => {
 
   function theme() { return YARDS[Save.data.selectedYard] || YARDS.classic; }
   function ball() { return BALLS[Save.data.selectedBall] || BALLS.classic; }
+
+  function ready(img) { return img && img.complete && img.naturalWidth > 0; }
+
+  function drawCover(ctx, img, w, h) {
+    const sw = img.naturalWidth, sh = img.naturalHeight;
+    const scale = Math.max(w / sw, h / sh);
+    const dw = sw * scale, dh = sh * scale;
+    ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  }
+
+  function paintArt(ctx, w, h, img) {
+    if (!ready(img)) return false;
+    drawCover(ctx, img, w, h);
+    const shade = ctx.createLinearGradient(0, 0, 0, h);
+    shade.addColorStop(0, 'rgba(9,14,24,.08)');
+    shade.addColorStop(.58, 'rgba(9,14,24,.08)');
+    shade.addColorStop(1, 'rgba(9,14,24,.68)');
+    ctx.fillStyle = shade; ctx.fillRect(0, 0, w, h);
+    return true;
+  }
 
   /* ---------- вспомогательное ---------- */
   function skyGrad(ctx, w, h, t, to) {
@@ -142,7 +182,11 @@ const Yards = (() => {
 
   /* ---------- сцена: фон меню ---------- */
   function paintMenu(ctx, w, h) {
-    const t = theme(), hor = h * .46;
+    const t = theme();
+    if (paintArt(ctx, w, h, t.id === 'russia90' ? ART.russia90Menu : ART.classicMenu)) {
+      return;
+    }
+    const hor = h * .46;
     skyGrad(ctx, w, h, t, hor);
     buildings(ctx, w, hor, t, t.id === 'russia90' ? 4 : 11);
     // земля
@@ -181,6 +225,7 @@ const Yards = (() => {
   /* ---------- сцена: вид сверху («Квадрат») ---------- */
   function paintCourt(ctx, w, h, court) {
     const t = theme();
+    if (paintArt(ctx, w, h, t.id === 'russia90' ? ART.russia90Square : ART.classicSquare)) return;
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, t.asphaltDark); g.addColorStop(.5, t.asphalt); g.addColorStop(1, t.asphaltDark);
     ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
@@ -232,7 +277,9 @@ const Yards = (() => {
 
   /* ---------- сцена: ворота анфас («Американка», «Навес») ---------- */
   function paintGoalScene(ctx, w, h, goal) {
-    const t = theme(), hor = goal.y - goal.h - 40;
+    const t = theme();
+    if (paintArt(ctx, w, h, t.id === 'russia90' ? ART.russia90Goal : ART.classicGoal)) return;
+    const hor = goal.y - goal.h - 40;
     skyGrad(ctx, w, h, t, hor + 10);
     buildings(ctx, w, hor, t, t.id === 'russia90' ? 7 : 3);
     // стена за воротами
@@ -359,6 +406,20 @@ const Yards = (() => {
 
   /* ---------- игрок (силуэт) ---------- */
   function drawPlayer(ctx, x, y, s, color, pose) {
+    if (ready(ART.players)) {
+      // Лист 2×2: красная куртка, синяя футболка, зелёное худи, вратарь.
+      const quadrant = pose === 'keeper' ? 3
+        : color === '#c0392b' ? 2
+        : color === '#3f7fba' ? 1
+        : 0;
+      const sx = (quadrant % 2) * 512, sy = Math.floor(quadrant / 2) * 512;
+      const dw = 116 * s, dh = 154 * s;
+      ctx.save();
+      ctx.globalAlpha = .98;
+      ctx.drawImage(ART.players, sx, sy, 512, 512, x - dw / 2, y - dh, dw, dh);
+      ctx.restore();
+      return;
+    }
     ctx.save(); ctx.translate(x, y);
     ctx.fillStyle = 'rgba(0,0,0,.3)';
     ctx.beginPath(); ctx.ellipse(0, 2, 13 * s, 4 * s, 0, 0, 7); ctx.fill();
