@@ -110,6 +110,7 @@ class CrossMode {
     const points = saved ? 0 : potential;
     if (saved) reason = 'Вратарь отбил!';
     this.state = 'shot';
+    this._lastShooter = shooter; this._lastKeeper = keeper; this._lastGoal = !!points; this._lastSaved = saved;
     this.shot = {
       from: this._ballPos(), to: {
         x: this.goal.x + this.goal.w * (side < 0 ? .16 : .84),
@@ -181,7 +182,9 @@ class CrossMode {
         keeper ? '#caa23c' : ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i],
         keeper ? 'keeper' : 'field',
         { phase: p.phase, moving: !keeper || this.dive !== 0, dive: keeper ? this.dive : 0,
-          kick: this.state === 'shot' && i === this.shooterIndex });
+          kick: this.state === 'shot' && i === this.shooterIndex,
+          celebrate: this.state === 'wait' && this._lastGoal && i === this._lastShooter,
+          catch: this.state === 'wait' && this._lastSaved && i === this._lastKeeper });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '700 13px Rubik'; ctx.textAlign = 'center';
       ctx.fillText(this._name(i) + (keeper ? ' 🧤' : ''), p.x, p.y + 17);
     });

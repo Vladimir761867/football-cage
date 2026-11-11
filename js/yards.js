@@ -89,10 +89,14 @@ const ART = {
   keeperDive: new Image(),
   runAtlas: { blue: new Image(), red: new Image(), green: new Image() },
   kickBlue: new Image(),
+  kickRed: new Image(),
+  kickGreen: new Image(),
+  goalBlue: new Image(),
+  keeperAnim: new Image(),
   russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new Image()])),
   ballAtlas: new Image()
 };
-const ART_VERSION = '?v=20261111-9';
+const ART_VERSION = '?v=20261111-10';
 ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
 ART.classicSquare.src = 'assets/yard-classic-square.png' + ART_VERSION;
 ART.classicGoal.src = 'assets/yard-classic-goal.png' + ART_VERSION;
@@ -109,6 +113,10 @@ ART.runAtlas.blue.src = 'assets/run-blue.webp' + ART_VERSION;
 ART.runAtlas.red.src = 'assets/run-red.webp' + ART_VERSION;
 ART.runAtlas.green.src = 'assets/run-green.webp' + ART_VERSION;
 ART.kickBlue.src = 'assets/kick-blue.webp' + ART_VERSION;
+ART.kickRed.src = 'assets/kick-red.webp' + ART_VERSION;
+ART.kickGreen.src = 'assets/kick-green.webp' + ART_VERSION;
+ART.goalBlue.src = 'assets/goal-blue.webp' + ART_VERSION;
+ART.keeperAnim.src = 'assets/keeper-anim.webp' + ART_VERSION;
 Object.entries(ART.russian).forEach(([code, img]) => { img.src = `assets/russia-${code}-triptych.webp` + ART_VERSION; });
 ART.ballAtlas.src = 'assets/balls-era-atlas.png' + ART_VERSION;
 Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.values(value))
@@ -564,14 +572,34 @@ const Yards = (() => {
     const moving = !motion || motion.moving !== false;
     const bob = moving ? Math.abs(Math.sin(phase)) * 2.4 * s : 0;
     const sway = moving ? Math.sin(phase) * 1.8 * s : 0;
+    if (pose === 'keeper' && ready(ART.keeperAnim)) {
+      const img = ART.keeperAnim, n = 4, cw = img.naturalWidth / n, ch = img.naturalHeight;
+      const diving = motion && motion.dive;
+      const fi = diving ? 1 : motion && motion.catch ? 2 : 0;
+      const k = 120 * s / 216 * (diving ? 1.05 : 1);       // 216 — высота кадра стойки в атласе
+      const dw = cw * k, dh = ch * k;
+      ctx.save();
+      ctx.translate(x, y - (diving ? 18 * s : 0));
+      ctx.fillStyle = 'rgba(0,0,0,.22)';
+      ctx.beginPath(); ctx.ellipse(0, diving ? 18 * s - 2 * s : -2 * s, dw * (diving ? .34 : .22), 6 * s, 0, 0, Math.PI * 2); ctx.fill();
+      if (!diving) { const t = performance.now() / 380; ctx.translate(Math.sin(t) * 3 * s, 0); ctx.rotate(Math.sin(t) * .02); }
+      if (diving && motion.dive > 0) ctx.scale(-1, 1);       // кадр прыжка нарисован влево
+      ctx.drawImage(img, fi * cw, 0, cw, ch, -dw / 2, -dh, dw, dh);
+      ctx.restore();
+      return;
+    }
     if (pose !== 'keeper' && ready(ART.runAtlas.blue) && ready(ART.runAtlas.red) && ready(ART.runAtlas.green)) {
       // Покадровая анимация: цикл бега (4 кадра), кадр удара (3 кадра, синий игрок).
       const kind = color === '#c0392b' || color === '#d25743' ? 'red'
         : color === '#7a9f4b' || color === '#5b9b69' ? 'green' : 'blue';
       let img = ART.runAtlas[kind], n = 4, fi;
       const kicking = motion && motion.kick;
-      if (kicking && kind === 'blue' && ready(ART.kickBlue)) {
-        img = ART.kickBlue; n = 3;
+      const kickImg = kind === 'red' ? ART.kickRed : kind === 'green' ? ART.kickGreen : ART.kickBlue;
+      if (motion && motion.celebrate && kind === 'blue' && ready(ART.goalBlue)) {
+        img = ART.goalBlue; n = 3;
+        fi = Math.floor(performance.now() / 260) % 3;
+      } else if (kicking && ready(kickImg)) {
+        img = kickImg; n = 3;
         const k = typeof motion.kick === 'number' && motion.kick > 0 && motion.kick <= 1 ? motion.kick : .5;
         fi = Math.min(2, Math.floor(k * 3));
       } else if (moving) {
@@ -585,7 +613,7 @@ const Yards = (() => {
       ctx.fillStyle = 'rgba(0,0,0,.22)';
       ctx.beginPath(); ctx.ellipse(0, -2 * s, dw * .26, 6 * s, 0, 0, Math.PI * 2); ctx.fill();
       if (motion && motion.face === -1) ctx.scale(-1, 1);
-      if (moving && !kicking) {
+      if (moving && !kicking && !(motion && motion.celebrate)) {
         // пыль из-под ног: три затухающих облачка позади бегущего
         const t = ((phase / (Math.PI / 2)) % 1 + 1) % 1;
         for (let i = 0; i < 3; i++) {
@@ -596,7 +624,6 @@ const Yards = (() => {
           ctx.fill();
         }
       }
-      if (kicking && !(kind === 'blue')) ctx.rotate(-.16);
       ctx.drawImage(img, fi * cw, 0, cw, ch, -dw / 2, -dh, dw, dh);
       ctx.restore();
       return;
