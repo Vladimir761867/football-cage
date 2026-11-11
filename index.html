@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1f27">
+<title>Дворовый футбол</title>
+<meta name="description" content="Дворовый футбол — мобильная игра: Квадрат, Американка 300 и Навес. Косметика не влияет на игру.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ГЛАВНЫЙ ЭКРАН -->
+  <section class="screen" id="screen-home">
+    <canvas class="bg-canvas" id="home-bg"></canvas>
+    <div class="screen-inner home-inner">
+      <div class="home-top">
+        <div class="coins-chip" id="home-coins">🪙 <b>0</b></div>
+        <button class="icon-btn" id="btn-settings" title="Настройки">⚙</button>
+      </div>
+      <h1 class="logo">Дворовый<br>футбол<span class="logo-ball">⚽</span></h1>
+      <div class="home-yard-label" id="home-yard-label">Классический двор</div>
+      <div class="home-actions">
+        <button class="btn btn-primary btn-big" id="btn-play">▶ Играть</button>
+        <div class="home-row">
+          <button class="btn btn-paper" id="btn-shop">🛒 Магазин</button>
+          <button class="btn btn-paper" id="btn-yards">🏠 Мой двор</button>
+        </div>
+      </div>
+      <div class="fair-note">🧢 Косметика — только стиль. На игру не влияет.</div>
+    </div>
+  </section>
+
+  <!-- ВЫБОР РЕЖИМА -->
+  <section class="screen hidden" id="screen-modes">
+    <canvas class="bg-canvas" id="modes-bg"></canvas>
+    <div class="screen-inner">
+      <div class="top-bar">
+        <button class="icon-btn" data-nav="home">←</button>
+        <div class="paper-title">Выбор режима</div>
+        <div class="coins-chip coins-small" id="modes-coins">🪙 <b>0</b></div>
+      </div>
+      <div class="mode-cards">
+        <button class="mode-card" data-mode="square">
+          <div class="mode-card-name">Квадрат</div>
+          <div class="mode-card-desc">Держи мяч в передачах, не дай боту перехватить. 90 секунд.</div>
+          <div class="mode-card-best" id="best-square"></div>
+        </button>
+        <button class="mode-card" data-mode="am300">
+          <div class="mode-card-name">Американка 300</div>
+          <div class="mode-card-desc">Бей по девятке, штанге и перекладине. Первый до 300 очков.</div>
+          <div class="mode-card-best" id="best-am300"></div>
+        </button>
+        <button class="mode-card" data-mode="cross">
+          <div class="mode-card-name">Навес</div>
+          <div class="mode-card-desc">Замыкай подачи: с лёта, головой или скидкой. 10 подач.</div>
+          <div class="mode-card-best" id="best-cross"></div>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- МАТЧ -->
+  <section class="screen hidden" id="screen-match">
+    <canvas id="match-canvas"></canvas>
+    <div class="match-hud">
+      <div class="match-hud-top">
+        <button class="icon-btn" id="btn-pause">⏸</button>
+        <div class="paper-title paper-title-sm" id="match-title">Квадрат</div>
+        <div class="hud-timer" id="match-timer"></div>
+      </div>
+      <div class="hud-score-row" id="match-score-row"></div>
+    </div>
+    <div class="match-hint" id="match-hint"></div>
+    <div class="match-toast" id="match-toast"></div>
+  </section>
+
+  <!-- ИТОГ МАТЧА -->
+  <section class="screen hidden" id="screen-result">
+    <canvas class="bg-canvas" id="result-bg"></canvas>
+    <div class="screen-inner result-inner">
+      <div class="paper-title result-title" id="result-title">Матч окончен</div>
+      <div class="result-card">
+        <div class="result-score" id="result-score">0 : 0</div>
+        <div class="result-sub" id="result-sub"></div>
+        <div class="result-best" id="result-moment"></div>
+        <div class="result-reward" id="result-reward"></div>
+      </div>
+      <button class="btn btn-primary btn-big" id="btn-rematch">🔁 Ещё раз</button>
+      <button class="btn btn-paper btn-exit" id="btn-result-menu">В меню</button>
+    </div>
+  </section>
+
+  <!-- МАГАЗИН -->
+  <section class="screen hidden" id="screen-shop">
+    <canvas class="bg-canvas" id="shop-bg"></canvas>
+    <div class="screen-inner">
+      <div class="top-bar">
+        <button class="icon-btn" data-nav="home">←</button>
+        <div class="paper-title">Магазин</div>
+        <div class="coins-chip coins-small" id="shop-coins">🪙 <b>0</b></div>
+      </div>
+      <div class="shop-tabs">
+        <button class="shop-tab active" data-tab="yards">🏠 Дворы</button>
+        <button class="shop-tab" data-tab="balls">⚽ Мячи</button>
+      </div>
+      <div class="shop-list" id="shop-list"></div>
+      <div class="fair-note">Все предметы — косметика. Физика мяча и правила одинаковы для всех.</div>
+    </div>
+  </section>
+
+  <!-- МОДАЛКИ -->
+  <div class="modal-wrap hidden" id="modal-wrap">
+    <div class="modal" id="modal-box"></div>
+  </div>
+
+</div>
+<script src="js/sound.js"></script>
+<script src="js/save.js"></script>
+<script src="js/yards.js"></script>
+<script src="js/gesture.js"></script>
+<script src="js/mode_square.js"></script>
+<script src="js/mode_am300.js"></script>
+<script src="js/mode_cross.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
