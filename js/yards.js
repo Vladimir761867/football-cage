@@ -64,14 +64,15 @@ const ART = {
   players: new Image(),
   ballAtlas: new Image()
 };
-ART.classicMenu.src = 'assets/yard-classic-menu.png';
-ART.classicSquare.src = 'assets/yard-classic-square.png';
-ART.classicGoal.src = 'assets/yard-classic-goal.png';
-ART.russia90Menu.src = 'assets/yard-russia90-menu.png';
-ART.russia90Square.src = 'assets/yard-russia90-square.png';
-ART.russia90Goal.src = 'assets/yard-russia90-goal.png';
-ART.players.src = 'assets/players-sheet.png';
-ART.ballAtlas.src = 'assets/balls-era-atlas.png';
+const ART_VERSION = '?v=20261111-2';
+ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
+ART.classicSquare.src = 'assets/yard-classic-square.png' + ART_VERSION;
+ART.classicGoal.src = 'assets/yard-classic-goal.png' + ART_VERSION;
+ART.russia90Menu.src = 'assets/yard-russia90-menu.png' + ART_VERSION;
+ART.russia90Square.src = 'assets/yard-russia90-square.png' + ART_VERSION;
+ART.russia90Goal.src = 'assets/yard-russia90-goal.png' + ART_VERSION;
+ART.players.src = 'assets/players-sheet.png' + ART_VERSION;
+ART.ballAtlas.src = 'assets/balls-era-atlas.png' + ART_VERSION;
 Object.values(ART).forEach(img => img.addEventListener('load', () => window.dispatchEvent(new Event('art-ready'))));
 
 const Yards = (() => {
