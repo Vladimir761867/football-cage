@@ -405,14 +405,20 @@
     const start = performance.now();
     function frame(now) {
       if (!canvas.isConnected || $('#modal-wrap').classList.contains('hidden')) return;
-      const t = U.clamp((now-start-180)/800,0,1);
+      const elapsed = now - start - 180;
+      const t = U.clamp(elapsed / 800, 0, 1);
       const k = U.easeOut(t);
+      const rebound = clip.rebound ? U.clamp((elapsed - 800) / 320, 0, 1) : 0;
+      const x = rebound ? U.lerp(clip.to.x, clip.rebound.x, rebound) : U.lerp(clip.from.x, clip.to.x, k);
+      const y = rebound ? U.lerp(clip.to.y, clip.rebound.y, rebound) - Math.sin(rebound * Math.PI) * 12 :
+        U.lerp(clip.from.y, clip.to.y, k) - Math.sin(k * Math.PI) * clip.arc;
+      const playing = t < 1 || Boolean(clip.rebound && rebound < 1);
       Yards.withScene(clip.yard, () => {
         Yards.paintGoalScene(ctx,clip.W,clip.H,clip.goal);
         if (!Yards.artGoal(clip.W,clip.H)) Yards.drawGoalFrame(ctx,clip.goal);
-        Yards.drawBall(ctx,U.lerp(clip.from.x,clip.to.x,k),U.lerp(clip.from.y,clip.to.y,k)-Math.sin(k*Math.PI)*clip.arc,U.lerp(15,8,k),undefined,t<1);
+        Yards.drawBall(ctx,x,y,U.lerp(15,8,k),undefined,playing);
       });
-      if (t < 1) requestAnimationFrame(frame);
+      if (playing) requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
   }
@@ -691,7 +697,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 16</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 17</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);

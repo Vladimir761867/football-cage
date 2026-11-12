@@ -28,7 +28,8 @@ class CrossMode {
     this.waitT = .7;
     this.flight = null;
     this.shot = null;
-    this.pendingKeeper = null;
+    this.keeperGesture = null;
+    this.saveWindow = [.95, .85, .72, .60, .50][this.level];
     this.landing = { x: W * .5, y: H * .67 };
     this.dive = 0;
     this.keeperX = this.goal.x + this.goal.w / 2;
@@ -42,14 +43,15 @@ class CrossMode {
     ]);
     env.hud.setTimer('⚽');
     env.hud.hint('Навес: проведи к углу ворот. Промахнулся — идёшь в ворота');
+    env.gesture.onStart = () => {
+      this.keeperGesture = this.keeperIndex === 0 && this.state === 'shot' ? this.shot : null;
+    };
     env.gesture.onEnd = d => {
+      const shot = this.keeperGesture;
+      this.keeperGesture = null;
+      if (shot) { this._trySave(shot, d); return; }
       if (this.state === 'combo' && d) { this._comboSwipe(d); return; }
-      if (this.state !== 'serve' || !d) return;
-      if (this.shooterIndex === 0) this._strike(d);
-      else if (this.keeperIndex === 0) {
-        this.dive = d.dx < 0 ? -1 : 1;
-        this.keeperTarget = this.goal.x + this.goal.w * (this.dive < 0 ? .18 : .82);
-      }
+      if (this.state === 'serve' && this.shooterIndex === 0 && d) this._strike(d);
     };
   }
 
@@ -142,7 +144,7 @@ class CrossMode {
     this.state = 'serve';
     this.flight = { t: 0, dur: this.env.tutorial ? 2.6 : [2.0,1.75,1.5,1.35,1.2][this.level], from: { x: b.x, y: b.y - 30 } };
     this.env.hud.hint(this.shooterIndex === 0 ? 'Навес! Ударь в нужный момент: проведи к левому или правому углу!' :
-      this.keeperIndex === 0 ? 'Ты в воротах: проведи в сторону удара!' : `${this._name(this.shooterIndex)} бьёт. Следи за навесом`);
+      this.keeperIndex === 0 ? 'Ты в воротах. Дождись удара!' : `${this._name(this.shooterIndex)} бьёт. Следи за навесом`);
     Sound.pass();
   }
   _ballPos() {
@@ -160,58 +162,111 @@ class CrossMode {
     else if (t > this.contact[1] && t <= .9) { pts = 75; reason = 'Головой'; }
     else { pts = 40; reason = 'Дотянулся'; }
     if (d.dy > 30) { pts = 0; reason = 'Скидка не попала в ворота'; }
-    this._resolveShot(side, pts, reason);
+    this._startShot(side, pts, reason);
   }
   _botStrike() {
     const side = this.botSide;
     const r = this.random();
     const pts = r < .24 ? 0 : r < .72 ? 75 : 100;
-    this._resolveShot(side, pts, pts ? 'Удар с навеса' : 'Промах');
+    this._startShot(side, pts, pts ? 'Удар с навеса' : 'Промах');
   }
-  _resolveShot(side, potential, reason) {
+  _startShot(side, potential, reason) {
     if (this.state !== 'serve') return;
-    const shooter = this.shooterIndex;
-    const keeper = this.keeperIndex;
-    const keeperGuess = keeper === 0 ? this.dive : (this.random() < .6 ? side : -side);
-    const saved = !this.env.tutorial && potential > 0 && keeperGuess === side && this.random() < (keeper === 0 ? .8 : .55);
-    const points = saved ? 0 : potential;
-    if (saved) reason = 'Вратарь отбил!';
-    this.state = 'shot';
-    this._lastShooter = shooter; this._lastKeeper = keeper; this._lastGoal = !!points; this._lastSaved = saved;
-    this.players[shooter].kickT = .3;
+    const playerCanSave = this.keeperIndex === 0 && potential > 0;
     this.shot = {
       from: this._ballPos(), to: {
         x: this.goal.x + this.goal.w * (side < 0 ? .16 : .84),
-        y: points || saved ? this.goal.y - this.goal.h * .4 : this.goal.y - this.goal.h - 24
+        y: potential > 0 ? this.goal.y - this.goal.h * .4 : this.goal.y - this.goal.h - 24
       },
-      t: 0, dur: .42, saved, side
+      t: 0, dur: playerCanSave ? this.saveWindow : .42,
+      potential, reason, side, playerCanSave, saved: false
     };
+    this.state = 'shot';
+    this.players[this.shooterIndex].kickT = .3;
+    Sound.pass();
+    if (playerCanSave) {
+      this.env.hud.hint('Удар! Свайпни в сторону мяча, пока он летит');
+    } else if (potential > 0 && !this.env.tutorial) {
+      const guess = this.random() < .6 ? side : -side;
+      this.shot.saved = guess === side && this.random() < .55;
+      this._dive(guess);
+    }
+  }
+  _dive(side) {
+    this.dive = side;
+    this.keeperTarget = this.goal.x + this.goal.w * (side < 0 ? .18 : .82);
+  }
+  _trySave(shot, drag) {
+    if (shot !== this.shot || !shot.playerCanSave || shot.t >= 1 || this.dive || !drag) return;
+    if (Math.abs(drag.dx) < 22 || Math.abs(drag.dx) < Math.abs(drag.dy)) return;
+    const side = drag.dx < 0 ? -1 : 1;
+    this._dive(side);
+    shot.saved = side === shot.side;
+  }
+  _finishShot() {
+    const shot = this.shot;
+    const { saved, potential, side } = shot;
+    const shooter = this.shooterIndex, keeper = this.keeperIndex;
+    const points = saved ? 0 : potential;
+    const reason = saved ? 'Вратарь отбил!' : shot.reason;
+    this._lastShooter = shooter;
+    this._lastKeeper = keeper;
+    this._lastGoal = points > 0;
+    this._lastSaved = saved;
+    if (saved) {
+      shot.rebound = {
+        from: shot.to,
+        to: { x: U.clamp(shot.to.x + side * this.env.W * .16, 12, this.env.W - 12), y: this.goal.y + 32 },
+        t: 0, dur: .26
+      };
+    }
     if ((points && shooter === 0) || (saved && keeper === 0)) {
-      this.env.highlight?.({from:this.shot.from, to:this.shot.to, arc:24, goal:{...this.goal}, label:saved ? 'Сейв' : reason});
+      this.env.highlight?.({
+        from: shot.from, to: shot.to, arc: 24, goal: { ...this.goal },
+        rebound: shot.rebound?.to, label: saved ? 'Сейв' : reason
+      });
     }
     if (points && shooter === 0) this.env.progress?.('goal');
     if (this.env.tutorial) {
       if (points) this.lessonDone = true;
       else this.env.hud.hint('Дождись золотой зоны и проведи к углу ворот.');
+      this._advanceRound();
       return;
-    }
-    if (potential > 0) {
-      this.dive = keeperGuess;
-      this.keeperTarget = this.goal.x + this.goal.w * (keeperGuess < 0 ? .18 : .82);
     }
     if (points) {
       this.players[shooter].score += points;
       this.env.hud.toast(`${this._name(shooter)}: ${reason} +${points}`, 'good');
       Sound.goal();
       if (shooter === 0) this.bestMoment = `${reason} +${points}`;
+    } else if (saved && keeper === 0) {
+      this.env.hud.toast('Сейв! Бьющий встаёт в ворота', 'good');
+      Sound.pass();
     } else {
-      this.env.hud.toast(`${this._name(shooter)}: ${reason}. В ворота!`, 'bad');
+      this.env.hud.toast(`${this._name(shooter)}: ${reason} В ворота!`, 'bad');
       Sound.miss();
-      // Сначала показываем сейв прежнего вратаря; смена ролей после полёта мяча.
-      this.pendingKeeper = shooter;
+    }
+    if (shot.playerCanSave) {
+      this.env.hud.hint(saved ? 'Отбил! Теперь бьющий встаёт в ворота' :
+        this.dive ? 'Прыжок в другую сторону. Следи за полётом мяча' : 'Гол. Свайпни, пока мяч ещё летит');
     }
     this.env.hud.setPill('you', this.players[0].score);
-    this.env.hud.setPill('keeper', this._name(this.keeperIndex));
+    if (!saved) this._advanceRound();
+  }
+  _advanceRound() {
+    this.shot = null;
+    if (this.env.tutorial) {
+      if (this.lessonDone) this.env.learned?.();
+      else { this.serveN = 0; this.state = 'wait'; this.waitT = .65; }
+      return;
+    }
+    if (!this._lastGoal) {
+      this.keeperIndex = this.shooterIndex;
+      this.env.hud.setPill('keeper', this._name(this.keeperIndex));
+    }
+    this.dive = 0;
+    this._nextAttacker();
+    this.state = 'wait';
+    this.waitT = .65;
   }
   update(dt) {
     if (this.finished) return;
@@ -251,23 +306,15 @@ class CrossMode {
       this.flight.t += dt;
       const t = this.flight.t / this.flight.dur;
       if (this.shooterIndex !== 0 && t >= .72) this._botStrike();
-      else if (this.shooterIndex === 0 && t >= 1) this._resolveShot(1, 0, 'Мяч упал');
+      else if (this.shooterIndex === 0 && t >= 1) this._startShot(1, 0, 'Мяч упал');
     } else if (this.state === 'shot') {
-      this.shot.t += dt / this.shot.dur;
-      if (this.shot.t >= 1) {
-        this.shot = null;
-        if (this.env.tutorial) {
-          if (this.lessonDone) this.env.learned?.();
-          else { this.serveN = 0; this.state = 'wait'; this.waitT = .65; }
-          return;
-        }
-        if (this.pendingKeeper !== null) {
-          this.keeperIndex = this.pendingKeeper;
-          this.pendingKeeper = null;
-          this.env.hud.setPill('keeper', this._name(this.keeperIndex));
-        }
-        this._nextAttacker();
-        this.state = 'wait'; this.waitT = .65;
+      const shot = this.shot;
+      if (shot.rebound) {
+        shot.rebound.t += dt / shot.rebound.dur;
+        if (shot.rebound.t >= 1) this._advanceRound();
+      } else {
+        shot.t += dt / shot.dur;
+        if (shot.t >= 1) this._finishShot();
       }
     }
   }
@@ -327,15 +374,29 @@ class CrossMode {
       ctx.lineWidth = 4; ctx.beginPath();
       ctx.ellipse(this.landing.x, this.landing.y, 30 - t * 14, 14 - t * 5, 0, 0, 7); ctx.stroke();
       const b = this._ballPos(); Yards.drawBall(ctx, b.x, b.y, 11 + t * 3, undefined, true);
-      if (this.keeperIndex === 0 && t >= .30 && t < .72) {
-        ctx.fillStyle = '#ffdf81'; ctx.font = '800 30px Rubik'; ctx.textAlign = 'center';
-        ctx.fillText(this.botSide < 0 ? '←' : '→', this.goal.x + this.goal.w/2, this.goal.y + 28);
-      }
     }
-    if (this.state === 'shot' && this.shot) {
-      const f = this.shot, t = U.easeOut(U.clamp(f.t, 0, 1));
-      Yards.drawBall(ctx, U.lerp(f.from.x, f.to.x, t),
-        U.lerp(f.from.y, f.to.y, t) - Math.sin(t * Math.PI) * 24, 12, undefined, true);
+    if (this.state === 'shot' && bp) {
+      Yards.drawBall(ctx, bp.x, bp.y, 12, undefined, true);
+      if (this.shot.playerCanSave && this.shot.t < 1) this._drawSaveWindow(ctx);
+    }
+  }
+  _drawSaveWindow(ctx) {
+    const shot = this.shot, goal = this.goal;
+    const width = Math.min(goal.w, 150);
+    const center = goal.x + goal.w / 2;
+    const y = goal.y + 36;
+    ctx.fillStyle = 'rgba(14,16,21,.85)';
+    ctx.fillRect(center - width / 2 - 3, y - 3, width + 6, 12);
+    ctx.fillStyle = shot.t < .7 ? '#ffdf81' : '#ff946c';
+    ctx.fillRect(center - width / 2, y, width * (1 - shot.t), 6);
+    if (this.level < 2 && !this.dive) {
+      ctx.font = '800 28px Rubik';
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#191919';
+      ctx.strokeText(shot.side < 0 ? '←' : '→', shot.to.x, y + 34);
+      ctx.fillStyle = '#ffdf81';
+      ctx.fillText(shot.side < 0 ? '←' : '→', shot.to.x, y + 34);
     }
   }
   _currentBall() {
@@ -350,8 +411,11 @@ class CrossMode {
     }
     if (this.state === 'serve' && this.flight) return this._ballPos();
     if (this.state === 'shot' && this.shot) {
-      const f = this.shot, t = U.easeOut(U.clamp(f.t, 0, 1));
-      return { x: U.lerp(f.from.x, f.to.x, t), y: U.lerp(f.from.y, f.to.y, t) };
+      const shot = this.shot;
+      const f = shot.rebound || shot;
+      const t = U.clamp(f.t, 0, 1);
+      const arc = shot.rebound ? 12 : 24;
+      return { x: U.lerp(f.from.x, f.to.x, t), y: U.lerp(f.from.y, f.to.y, t) - Math.sin(t * Math.PI) * arc };
     }
     return null;
   }

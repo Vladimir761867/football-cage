@@ -22,6 +22,67 @@ function env() {
     hud: new Proxy({}, { get: () => () => {} }), finish() {} };
 }
 
+function crossWithPlayerInGoal(difficulty = 'normal') {
+  const { CrossMode } = runtime();
+  const clips = [];
+  const mode = new CrossMode({
+    ...env(), difficulty, highlight: clip => clips.push(clip), random: () => .99
+  });
+  mode.keeperIndex = 0;
+  mode.shooterIndex = 1;
+  mode._roles();
+  mode._startCross();
+  return { mode, clips, swipe: { dx: 40, dy: 4 } };
+}
+
+test('keeper saves a shot with a fresh swipe during flight and rotates after the rebound', () => {
+  const { mode, clips, swipe } = crossWithPlayerInGoal();
+  const gesture = mode.env.gesture;
+  gesture.onStart();
+  mode.update(mode.flight.dur * .73);
+  assert.equal(mode.state, 'shot');
+  assert.equal(mode.players[1].score, 0);
+  gesture.onEnd(swipe);
+  assert.equal(mode.dive, 0);
+
+  gesture.onStart();
+  gesture.onEnd({ dx: 5, dy: -50 });
+  assert.equal(mode.dive, 0);
+  gesture.onStart();
+  gesture.onEnd(swipe);
+  mode.update(mode.shot.dur);
+  assert.equal(mode.players[1].score, 0);
+  assert.equal(mode.keeperIndex, 0);
+  assert.equal(clips.length, 1);
+  assert.equal(clips[0].label, 'Сейв');
+  assert.ok(clips[0].rebound);
+  mode.update(mode.shot.rebound.dur);
+  assert.equal(mode.state, 'wait');
+  assert.equal(mode.keeperIndex, 1);
+});
+
+test('a wrong first dive and a swipe released after the deadline both concede', () => {
+  const { mode, swipe } = crossWithPlayerInGoal();
+  const gesture = mode.env.gesture;
+  mode.update(mode.flight.dur * .73);
+  gesture.onStart();
+  gesture.onEnd({ dx: -40, dy: 4 });
+  gesture.onStart();
+  gesture.onEnd(swipe);
+  mode.update(mode.shot.dur);
+  assert.equal(mode.players[1].score, 100);
+  assert.equal(mode.keeperIndex, 0);
+
+  const { mode: harder } = crossWithPlayerInGoal('expert');
+  harder.update(harder.flight.dur * .73);
+  assert.ok(harder.shot.dur < mode.saveWindow);
+  harder.env.gesture.onStart();
+  harder.update(harder.shot.dur);
+  harder.env.gesture.onEnd(swipe);
+  assert.equal(harder.players[1].score, 100);
+  assert.equal(harder.keeperIndex, 0);
+});
+
 test('each decade has exactly three balls and a free default; every yard selects its era', () => {
   const { Yards, YARDS, Save } = runtime();
   for (const era of ['80', '90', '00', '10', '20']) {
