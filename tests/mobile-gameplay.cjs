@@ -12,10 +12,10 @@ function runtime(storage = new Map()) {
     Sound: new Proxy({}, { get: () => () => {} }),
     Math: Object.assign(Object.create(Math), { random: () => .5 })
   });
-  for (const file of ['save', 'competition', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
+  for (const file of ['save', 'competition', 'activity', 'shot-rules', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js', file + '.js'), 'utf8'), context);
   }
-  return vm.runInContext('({Save,Difficulty,Cups,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
+  return vm.runInContext('({Save,Difficulty,Cups,Activities,YardEditor,ShotRules,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
 }
 function env() {
   return { W: 520, H: 1125, difficulty: 'normal', opponentCount: 3, gesture: {},
@@ -158,4 +158,28 @@ test('dog pace ramps actual defender movement after successful passes', () => {
   assert.equal(later.level,5);
   assert.ok(later.distance > initial.distance * 1.4);
   assert.ok(moved(0,'expert').distance > initial.distance * 2);
+});
+
+test('three-target challenge counts each part once and daily rewards cannot be repeated', () => {
+  const { Activities, Save } = runtime();
+  const series = Activities.tracker(Activities.definition('targets'));
+  ['bar','bar','post','miss','corner'].forEach(event => series.push(event));
+  assert.equal(series.score,3);
+  const daily = Activities.daily();
+  assert.equal(Activities.record(daily,daily.goal).bonus,30);
+  assert.equal(Activities.record(daily,daily.goal+1).bonus,0);
+  assert.equal(Save.data.coins,30);
+  assert.equal(Save.data.badges,1);
+});
+
+test('friend links preserve fixtures and reject invalid dates or custom field values', () => {
+  const { Activities } = runtime();
+  const params = new URLSearchParams('challenge=2026-11-12.targets&score=3&yard=ru80_1.wet.retro.warm.green.untrusted');
+  const c = Activities.fromLink(params);
+  assert.equal(c.yard,'ru80_1');
+  assert.equal(c.friend,3);
+  assert.equal(c.custom.prop,'none');
+  assert.equal(Activities.fromLink(new URLSearchParams('challenge=2026-02-31.targets')),null);
+  const a = Activities.random(c.key), b = Activities.random(c.key);
+  assert.deepEqual([a(),a(),a()],[b(),b(),b()]);
 });

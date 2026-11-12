@@ -5,9 +5,13 @@
 class SquareMode {
   constructor(env) {
     this.env = env;
+    this.random = env.random || Math.random;
     const { W, H } = env;
     const difficulty = env.difficulty || 'normal';
     this.cfg = Difficulty.square(difficulty);
+    this.showBounce = env.tutorial || Difficulty.index(difficulty) <= 1;
+    this.stage = env.cupStage ?? -1;
+    this.incoming = 1;
     // запасной прямоугольник, если арт ещё не загрузился
     this.court = { x: W * .09, y: H * .24, w: W * .82, h: H * .56 };
     // четверти: ты — нижняя левая (ближе к пальцу и крупнее в перспективе)
@@ -35,7 +39,7 @@ class SquareMode {
     this.receiveT = 0;
     this.bounces = 0;
     this.score = 0;
-    this.timeLeft = env.cup ? 90 : 150;
+    this.timeLeft = env.challenge?.time || (env.cup ? 90 : 150);
     this.lastMistake = '';
     this.trail = [];
 
@@ -46,7 +50,7 @@ class SquareMode {
       { id: 'p4', lbl: 'Игрок 4', val: '0/10' }
     ]);
     env.hud.setTimer(this.timeLeft);
-    env.hud.hint('Твоя четверть — нижняя левая. Отбей до второго отскока');
+    env.hud.hint(env.tutorial ? 'Ты в нижней левой четверти. Проведи коротко к одному из игроков.' : 'Твоя четверть — нижняя левая. Отбей до второго отскока');
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
@@ -62,7 +66,7 @@ class SquareMode {
     env.gesture.onEnd = d => {
       const drag = this.aimDrag; this.aimDrag = null;
       if (this.state !== 'aim' || this.holder !== 0 || !drag || !d || d.len < 18) return;
-      this._hit(drag);
+      this._hit(d);
     };
   }
 
@@ -96,14 +100,18 @@ class SquareMode {
     let destU, destV;
     if (outcome === 'ok') {
       const b = this.bounds[target];
-      destU = U.clamp((b.u[0] + b.u[1]) / 2 + (Math.random() - .5) * .26, b.u[0], b.u[1]);
-      destV = U.clamp((b.v[0] + b.v[1]) / 2 + (Math.random() - .5) * .26, b.v[0], b.v[1]);
+      const deep = p >= .78;
+      const rival = this.nodes[target];
+      destU = deep ? (rival.u < (b.u[0]+b.u[1])/2 ? b.u[1] : b.u[0])
+        : U.clamp((b.u[0] + b.u[1]) / 2 + (this.random() - .5) * .22, b.u[0], b.u[1]);
+      destV = deep ? (rival.v < (b.v[0]+b.v[1])/2 ? b.v[1] : b.v[0])
+        : U.clamp((b.v[0] + b.v[1]) / 2 + (this.random() - .5) * .22, b.v[0], b.v[1]);
     } else {
       destU = this.nodes[this.holder].u + Math.cos(drag.angle) * .5;
       destV = this.nodes[this.holder].v + Math.sin(drag.angle) * .5;
     }
     this.state = 'fly';
-    this.fly = { from, destU, destV, target, outcome, t: 0, dur: .34 + .16 * (1 - p) };
+    this.fly = { from, destU, destV, target, outcome, deep: p >= .78, t: 0, dur: .34 + .16 * (1 - p) };
     this.trail = [];
     Sound.pass();
   }
@@ -130,22 +138,33 @@ class SquareMode {
   _arrive() {
     const f = this.fly; this.fly = null;
     if (f.outcome === 'out') {
+      if (this.env.tutorial) {
+        this.state = 'aim'; this.receiveT = 0;
+        this.env.hud.hint('Проведи к игроку чуть короче. Стрелка покажет направление.');
+        return;
+      }
       this._markError(this.holder, 'Мяч за линию');
       if (this._checkEnd()) return;
       this._selectBotHolder();
       return;
     }
-    if (this.holder === 0) this.score++;
+    if (this.holder === 0) {
+      this.score++;
+      this.env.progress?.('return');
+      if (this.env.tutorial) { this.env.learned?.(); return; }
+    }
     this.holder = f.target;
     this.state = 'aim';
     this.receiveT = 0;
     this.bounces = 0;
+    this.incoming = f.deep ? .8 : 1;
   }
 
   _selectBotHolder() {
     const alive = this._targets();
     if (!alive.length) { this._finish(true); return; }
-    this.holder = alive[Math.floor(Math.random() * alive.length)];
+    this.holder = alive[Math.floor(this.random() * alive.length)];
+    this.incoming = 1;
     this.state = 'aim'; this.receiveT = 0; this.bounces = 0;
   }
 
@@ -153,15 +172,19 @@ class SquareMode {
     if (this.holder === 0 || this.state !== 'aim') return;
     const targets = this._targets();
     if (!targets.length) { this._finish(true); return; }
-    const target = targets[Math.floor(Math.random() * targets.length)];
+    const target = this.stage === 2 && targets.includes(0) && this.random() < .55
+      ? 0 : targets[Math.floor(this.random() * targets.length)];
     const from = this._pos(this.holder), to = this._pos(target);
-    const accurate = Math.random() < this.cfg.botAcc;
-    const angle = Math.atan2(to.y - from.y, to.x - from.x) + (accurate ? 0 : (Math.random() - .5) * .85);
-    this._hit({ angle, len: Math.min(this.env.W, this.env.H) * (accurate ? .25 : .06) });
+    const style = this.holder;
+    const receiveDifficulty = this.incoming < 1 ? .13 : 0;
+    const accurate = this.random() < this.cfg.botAcc - receiveDifficulty - (style === 2 ? .05 : 0);
+    const angle = Math.atan2(to.y - from.y, to.x - from.x) + (accurate ? 0 : (this.random() - .5) * .85);
+    const strength = style === 2 || (style === 3 && this.stage >= 1) ? .34 : .25;
+    this._hit({ angle, len: Math.min(this.env.W, this.env.H) * (accurate ? strength : .06) });
   }
 
   update(dt) {
-    this.timeLeft -= dt;
+    if (!this.env.tutorial) this.timeLeft -= dt;
     this.env.hud.setTimer(Math.max(0, Math.ceil(this.timeLeft)));
     if (this.timeLeft <= 0) { this._finish(false, true); return; }
 
@@ -179,9 +202,11 @@ class SquareMode {
         n.wanderT -= dt;
         if (n.wanderT <= 0) {
           const b = this.bounds[i];
-          n.tu = b.u[0] + Math.random() * (b.u[1] - b.u[0]);
-          n.tv = b.v[0] + Math.random() * (b.v[1] - b.v[0]);
-          n.wanderT = 1.3 + Math.random() * 1.6;
+          const u = i === 1 ? .34 + this.random()*.32 : this.random();
+          const v = i === 1 ? .34 + this.random()*.32 : this.random();
+          n.tu = b.u[0] + u * (b.u[1] - b.u[0]);
+          n.tv = b.v[0] + v * (b.v[1] - b.v[0]);
+          n.wanderT = 1.3 + this.random() * 1.6;
         }
       }
       const du = n.tu - n.u, dv = n.tv - n.v;
@@ -194,10 +219,10 @@ class SquareMode {
       }
     });
 
-    if (this.state === 'aim') {
+    if (this.state === 'aim' && !this.env.tutorial) {
       this.receiveT += dt;
       if (this.holder !== 0 && this.receiveT >= this.cfg.botDelay + this.bounces * .3) this._botHit();
-      if (this.receiveT >= this.cfg.receive) {
+      if (this.receiveT >= this.cfg.receive * this.incoming) {
         this.bounces++;
         this.receiveT = 0;
         if (this.bounces === 1) { if (this.holder === 0) this.env.hud.toast('Первый отскок — отбивай!', 'gold'); }
@@ -229,6 +254,10 @@ class SquareMode {
     if (this.state === 'fly' && this.fly) {
       const f = this.fly, tt = U.easeOut(U.clamp(f.t, 0, 1));
       const dest = Yards.quadPoint(quad, f.destU, f.destV);
+      if (this.showBounce && f.target === 0 && f.outcome === 'ok') {
+        ctx.fillStyle = 'rgba(16,26,35,.56)'; ctx.strokeStyle = '#ffe294'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(dest.x, dest.y, 18, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
       const x = U.lerp(f.from.x, dest.x, tt);
       const y = U.lerp(f.from.y, dest.y, tt) - Math.sin(tt * Math.PI) * 60;
       ball = { x, y };
@@ -238,7 +267,7 @@ class SquareMode {
     } else {
       this.trail.length = 0;
       const i = this.holder, p = this._pos(i), s = this._scale(i);
-      const bounce = Math.abs(Math.sin(Math.PI * this.receiveT / this.cfg.receive));
+      const bounce = Math.abs(Math.sin(Math.PI * this.receiveT / (this.cfg.receive * this.incoming)));
       ball = { x: p.x + this.nodes[i].face * 20 * s, y: p.y - 8 * s - bounce * 46 * s };
       ballScale = s;
     }
@@ -250,7 +279,7 @@ class SquareMode {
       const holder = i === this.holder && this.state === 'aim';
       if (holder) {
         // кольцо-таймер приёма: жёлтое, после первого отскока — красное
-        const frac = U.clamp(this.receiveT / this.cfg.receive, 0, 1);
+        const frac = U.clamp(this.receiveT / (this.cfg.receive * this.incoming), 0, 1);
         ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.lineWidth = 5;
         ctx.beginPath(); ctx.ellipse(p.x, p.y + 4 * s, 30 * s, 11 * s, 0, 0, 7); ctx.stroke();
         ctx.strokeStyle = this.bounces ? 'rgba(255,100,80,.95)' : 'rgba(255,210,77,.95)';
@@ -283,9 +312,9 @@ class SquareMode {
   }
 
   _finish(won, timedOut = false) {
-    const newBest = Save.setBest('square', this.score);
-    const coins = this.score * 5 + (won ? 30 : 0) + (newBest ? 15 : 0);
-    Save.addCoins(coins);
+    const newBest = !this.env.challenge && Save.setBest('square', this.score);
+    const coins = this.env.challenge ? 0 : this.score * 5 + (won ? 30 : 0) + (newBest ? 15 : 0);
+    if (coins) Save.addCoins(coins);
     this.env.finish({
       won, penalties: [...this.errors],
       title: timedOut ? 'Время вышло' : won ? 'Остался последним!' : 'Ты выбыл',

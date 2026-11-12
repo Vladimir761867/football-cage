@@ -72,6 +72,26 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--night)
   font-family:'Caveat',cursive;font-size:22px;color:var(--chalk);opacity:.9;margin-bottom:14px;
   text-shadow:0 2px 6px rgba(0,0,0,.8);}
 .home-actions{display:flex;flex-direction:column;gap:12px;margin-top:auto;}
+.home-actions .daily-button{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;}
+.daily-button small{font-size:11px;line-height:1.25;text-align:right;max-width:54%;}
+.mode-extras,.result-actions{display:flex;gap:8px;flex-wrap:wrap;}
+.mode-extras{margin-top:14px;}
+.mode-extras .btn,.result-actions .btn{flex:1;min-height:44px;font-size:12px;padding:8px;}
+.result-actions:empty,.result-actions .hidden,.lesson-skip.hidden,.match-choices.hidden{display:none;}
+.match-choices{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);left:6%;width:88%;display:flex;gap:8px;z-index:5;}
+.match-choices .btn{flex:1;min-height:44px;padding:8px;font-size:13px;}
+#screen-match.has-choices .match-hint{bottom:calc(env(safe-area-inset-bottom,0px) + 65px);}
+.lesson-skip{position:absolute;top:calc(env(safe-area-inset-top,0px) + 114px);right:12px;z-index:5;font-size:11px;padding:10px;}
+.feature-stack{display:grid;gap:9px;margin:12px 0;}
+.feature-stack .btn{min-height:44px;font-size:13px;padding:9px;}
+.yard-editor-preview,.replay-preview{display:block;width:100%;border-radius:12px;background:#232936;}
+.yard-editor-preview{aspect-ratio:2/1;}
+.editor-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;}
+.editor-fields label,.room-fields label{display:grid;gap:4px;font-size:12px;font-weight:700;}
+.editor-fields select,.room-fields input,.share-link{width:100%;min-width:0;min-height:40px;padding:6px 8px;border:1px solid #b5aa97;border-radius:8px;background:#fff9eb;color:#29251d;font:inherit;}
+.room-fields{display:grid;gap:8px;margin:10px 0;}
+.feature-status{font-size:12px;min-height:1.2em;line-height:1.35;}
+.modal .feature-small{font-size:12px;opacity:.85;}
 .home-row{display:flex;gap:12px;}
 .home-row .btn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-inline:8px;font-size:15px;}
 

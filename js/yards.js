@@ -155,7 +155,22 @@ Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.va
 
 const Yards = (() => {
 
-  function theme() { return YARDS[Save.data.selectedYard] || YARDS.classic; }
+  let scene = null;
+  function editedTheme(preset) {
+    const custom = YardEditor.clean(preset);
+    return { ...YARDS[custom.base], id:'custom', name:`Мой двор · ${YARDS[custom.base].era}`, custom };
+  }
+  function theme() {
+    if (scene) return scene;
+    if (Save.data.selectedYard === 'custom' && Save.data.customYard) return editedTheme(Save.data.customYard);
+    return YARDS[Save.data.selectedYard] || YARDS.classic;
+  }
+  function setScene(t) { scene = t; }
+  function withScene(t, draw) {
+    const before = scene;
+    scene = t;
+    try { return draw(); } finally { scene = before; }
+  }
   function ballEra(t = theme()) {
     return t.atlas || (t.id.startsWith('classic_80') ? '80' : '90');
   }
@@ -308,6 +323,50 @@ const Yards = (() => {
     return true;
   }
 
+  function paintCustom(ctx,w,h,t) {
+    const c = t.custom, g = goalGeometry(w,h);
+    const unit = Math.min(w,h) / 520;
+    const ground = g.y + 4 * unit;
+    ctx.save();
+    const tint = { wet:'rgba(32,46,66,.46)', turf:'rgba(46,91,42,.58)', clay:'rgba(140,70,44,.54)' }[c.surface];
+    if (tint) {
+      ctx.fillStyle = tint; ctx.fillRect(0, ground, w, h-ground);
+      ctx.strokeStyle = c.surface === 'wet' ? 'rgba(218,226,245,.10)' : 'rgba(253,236,192,.12)';
+      ctx.lineWidth = unit;
+      ctx.beginPath();
+      for (let i=0;i<260;i++) {
+        const x = (i * 79 % 263) / 263 * w;
+        const f = (i * 43 % 271) / 271;
+        const y = ground + f*(h-ground);
+        ctx.moveTo(x,y); ctx.lineTo(x+unit*(1+f*6),y+unit*(c.surface === 'turf' ? -3 : 0));
+      }
+      ctx.stroke();
+    }
+    const paint = {metal:'#dfe8ea',retro:'#eee1c8',blue:'#36679e'}[c.frame];
+    if (paint) {
+      ctx.lineWidth = 6 * unit; ctx.lineJoin='round'; ctx.strokeStyle=paint;
+      ctx.beginPath(); ctx.moveTo(g.x,g.y); ctx.lineTo(g.x,g.y-g.h); ctx.lineTo(g.x+g.w,g.y-g.h); ctx.lineTo(g.x+g.w,g.y); ctx.stroke();
+      if (c.frame === 'retro') {
+        ctx.strokeStyle='#a14b3e'; ctx.setLineDash([g.w*.055,g.w*.055]);
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+    if (c.light !== 'original') {
+      const glow = ctx.createRadialGradient(w*.18,h*.32,0,w*.18,h*.32,h*.7);
+      glow.addColorStop(0,c.light === 'warm' ? 'rgba(255,184,90,.31)' : 'rgba(118,157,252,.24)');
+      glow.addColorStop(1,'rgba(25,34,52,0)');
+      ctx.fillStyle=glow; ctx.fillRect(0,0,w,h);
+    }
+    if (c.prop === 'bench' || c.prop === 'lamp') {
+      ctx.translate(w*.065,ground+16*unit); ctx.scale(unit,unit);
+      if (c.prop === 'bench') bench(ctx,0,0,.66);
+      else lampPost(ctx,0,0,t);
+    } else if (c.prop === 'flags') {
+      ctx.scale(unit,unit); bunting(ctx,w*.1/unit,(ground-g.h*.96)/unit,w*.9/unit,(ground-g.h)/unit);
+    }
+    ctx.restore();
+  }
+
   function paintRussianAtlas(ctx, w, h, t) {
     if (!t.atlas || !ready(ART.russian[t.atlas])) return false;
     const img = ART.russian[t.atlas];
@@ -331,6 +390,7 @@ const Yards = (() => {
     shade.addColorStop(.65, 'rgba(9,14,24,0)');
     shade.addColorStop(1, 'rgba(9,14,24,.55)');
     ctx.fillStyle = shade; ctx.fillRect(0, 0, w, h);
+    if (t.custom) paintCustom(ctx,w,h,t);
     return true;
   }
 
@@ -709,6 +769,9 @@ const Yards = (() => {
 
   /* ---------- игрок (силуэт) ---------- */
   function drawPlayer(ctx, x, y, s, color, pose, motion) {
+    if (color === '#3f7fba' && pose !== 'keeper' && theme().custom) {
+      color = {red:'#c0392b',green:'#7a9f4b',blue:color}[theme().custom.kit];
+    }
     s *= .74;
     const phase = motion && Number.isFinite(motion.phase) ? motion.phase : performance.now() / 240;
     const moving = motion && motion.moving === true;
@@ -850,5 +913,5 @@ const Yards = (() => {
     Save.data.selectedYard = saveSel;
   }
 
-  return { theme, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
+  return { theme, editedTheme, setScene, withScene, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
 })();

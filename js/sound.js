@@ -40,7 +40,13 @@ const Sound = (() => {
   return {
     kick()      { tone(140, 'sine', 0.005, 0.12, 0.5, 60); noise(0.06, 0.25, 1400); vibrate(18); },
     pass()      { tone(220, 'sine', 0.004, 0.07, 0.3, 120); vibrate(10); },
-    post()      { tone(620, 'triangle', 0.002, 0.35, 0.4, 590); tone(1240, 'sine', 0.002, 0.2, 0.15); vibrate([20, 30, 20]); },
+    post()      {
+      const yard = Yards.theme(), retro = ['80','90'].includes(Yards.ballEra(yard)) || yard.custom?.frame === 'retro';
+      const pitch = retro ? 510 : 680;
+      tone(pitch, 'triangle', .002, .35, .4, pitch*.95);
+      tone(pitch*2, 'sine', .002, .20, .15);
+      vibrate([20, 30, 20]);
+    },
     goal()      { tone(392, 'triangle', 0.01, 0.12, 0.3); setTimeout(() => tone(523, 'triangle', 0.01, 0.12, 0.3), 110); setTimeout(() => tone(659, 'triangle', 0.01, 0.25, 0.35), 220); vibrate([30, 40, 60]); },
     miss()      { tone(200, 'sawtooth', 0.01, 0.18, 0.12, 110); vibrate(25); },
     intercept() { tone(300, 'square', 0.005, 0.1, 0.12, 150); noise(0.08, 0.15, 800); vibrate(30); },

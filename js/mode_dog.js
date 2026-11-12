@@ -4,6 +4,7 @@
 class DogMode {
   constructor(env) {
     this.env = env;
+    this.random = env.random || Math.random;
     const { W, H } = env;
     const difficulty = env.difficulty || 'normal';
     this.cfg = Difficulty.dog(difficulty);
@@ -21,7 +22,8 @@ class DogMode {
     this.score = 0;
     this.passes = 0;
     this.streak = 0;
-    this.timeLeft = 90;
+    this.timeLeft = env.challenge?.time || 90;
+    this.youDog = false;
     this.state = 'aim'; // aim | fly
     this.fly = null;
     this.aimDrag = null;
@@ -38,11 +40,11 @@ class DogMode {
       { id: 'losses', lbl: 'Потери', val: '0/10' },
       { id: 'pace', lbl: 'Темп', val: '1/5' }
     ]);
-    env.hud.setTimer('90');
-    env.hud.hint(`${this.cfg.passers} против ${this.cfg.dogs}. Короткий свайп к партнёру. Каждые 8 пасов темп растёт`);
+    env.hud.setTimer(this.timeLeft);
+    env.hud.hint(env.tutorial ? 'Проведи коротко к партнёру сбоку. Для первого паса водящий подождёт.' : `${this.cfg.passers} против ${this.cfg.dogs}. Короткий свайп к партнёру. Каждые 8 пасов темп растёт`);
 
     env.gesture.onStart = p => {
-      if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
+      if (this.youDog || this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
       const n = this.passers[0];
       if (Math.hypot(p.x - n.x, p.y - n.y) > Math.min(W, H) * .3) return;
       this.aimDrag = { sx: n.x, sy: n.y, x: p.x, y: p.y, dx: 0, dy: 0, len: 0, angle: 0 };
@@ -54,8 +56,14 @@ class DogMode {
     env.gesture.onEnd = d => {
       const drag = this.aimDrag;
       this.aimDrag = null;
+      if (this.youDog && d) {
+        const dog = this.dogs[0], q = this._quad();
+        const top = q[0].y, bottom = q[3].y;
+        dog.manual = { x: U.clamp(dog.x + d.dx, this.env.W*.11, this.env.W*.89), y: U.clamp(dog.y + d.dy, top, bottom) };
+        return;
+      }
       if (this.state !== 'aim' || this.holder !== 0 || !drag || !d || d.len < 18) return;
-      this._pass(drag);
+      this._pass(d);
     };
   }
 
@@ -122,6 +130,7 @@ class DogMode {
   _penalize(i, reason) {
     if (i < 0 || !this.active[i]) return;
     this.errors[i]++;
+    this.env.progress?.('loss');
     this.streak = 0;
     this.env.hud.setPill('losses', `${this.errors[0]}/10`);
     this.env.hud.toast(`${reason} • ${i === 0 ? 'твоя потеря' : `ошибка ${this.errors[i]}/10`}`, 'bad');
@@ -137,7 +146,7 @@ class DogMode {
     this.holdT = 0;
     this.paceLevel = Math.min(5, 1 + Math.floor(this.passes / 8));
     this.holdMax = this.cfg.hold / (1 + (this.paceLevel - 1) * .08);
-    this.botHold = this.cfg.botHold / (1 + (this.paceLevel - 1) * .08) + Math.random() * .15;
+    this.botHold = this.cfg.botHold / (1 + (this.paceLevel - 1) * .08) + this.random() * .15;
     this.env.hud.setPill('pace', `${this.paceLevel}/5`);
   }
 
@@ -145,7 +154,14 @@ class DogMode {
     const alive = this._receivers();
     if (!this.active[0]) { this._finish(false); return; }
     if (this.active.filter(Boolean).length <= 1) { this._finish(true); return; }
-    this._giveBall(alive[Math.floor(Math.random() * alive.length)]);
+    this._giveBall(alive[Math.floor(this.random() * alive.length)]);
+  }
+
+  _changeRole() {
+    this.youDog = true;
+    this.dogs[0].manual = null;
+    this.env.hud.hint('Ты водишь. Свайпни в сторону передачи, чтобы перехватить мяч.');
+    this._nextHolder();
   }
 
   _resolve() {
@@ -154,6 +170,8 @@ class DogMode {
     if (!f) return;
     if (f.outcome === 'ok') {
       this.passes++; this.streak++;
+      this.env.progress?.('pass');
+      if (this.env.tutorial && this.holder === 0) { this.env.learned?.(); return; }
       const fast = this.fast && this.holder === 0;
       const pts = fast ? 3 : 1;
       this.score += pts;
@@ -166,6 +184,21 @@ class DogMode {
       else if (this.streak > 0 && this.streak % 5 === 0) { this.env.hud.toast(`Серия ${this.streak}!`, 'good'); Sound.goal(); }
       void prev;
     } else {
+      if (this.env.tutorial) {
+        this._giveBall(0);
+        this.env.hud.hint('Попробуй короткий свайп точно к боковому партнёру.');
+        return;
+      }
+      if (f.catcher === this.dogs[0] && this.youDog) {
+        this.youDog = false;
+        this.dogs[0].manual = null;
+        this._giveBall(0);
+        this.env.hud.toast('Перехват! Теперь ты пасуешь', 'good');
+        return;
+      }
+      if (this.env.rotateDog && this.holder === 0 && !this.youDog && f.outcome === 'steal') {
+        this._changeRole(); return;
+      }
       if (f.outcome === 'steal') { this.lastSteal = 0; this.env.hud.toast('Водящий отнял!', 'bad'); Sound.intercept(); }
       else { this.env.hud.toast('Плохая передача', 'bad'); Sound.miss(); }
       this._penalize(this.holder, f.outcome === 'steal' ? 'мяч отняли' : 'мимо');
@@ -175,7 +208,7 @@ class DogMode {
   }
 
   update(dt) {
-    this.timeLeft -= dt;
+    if (!this.env.tutorial) this.timeLeft -= dt;
     this.env.hud.setTimer(Math.max(0, Math.ceil(this.timeLeft)));
     if (this.timeLeft <= 0) { this._finish(this.active[0] && this.score >= 10); return; }
     // позиции держим по перспективе (экран мог измениться), небольшое покачивание
@@ -189,19 +222,27 @@ class DogMode {
     const holder = this.passers[this.holder];
     if (this.state === 'aim') {
       this.holdT += dt;
-      if (this.holder !== 0) {
+      if (this.holder !== 0 || this.youDog) {
         if (this.holdT >= this.botHold) this._botPass();
-      } else if (this.holdT >= this.holdMax) {
+      } else if (this.holdT >= this.holdMax && !this.env.tutorial) {
         // слишком долго держишь — мяч отобрали
         this.aimDrag = null;
         this.env.hud.toast('Долго держишь!', 'bad'); Sound.intercept();
-        this._penalize(0, 'тайм-аут');
-        this._nextHolder();
+        if (this.env.rotateDog) this._changeRole();
+        else { this._penalize(0, 'тайм-аут'); this._nextHolder(); }
       }
     }
     this.dogs.forEach((d, i) => {
       const c = this._pt(.5, .5);
-      if (this.state === 'fly' && this.fly) {
+      if (i === 0 && this.youDog) {
+        const target = d.manual || d;
+        d.tx = target.x; d.ty = target.y;
+      } else if (i === 1 && this.state === 'aim') {
+        const options = this._receivers().map(j => this.passers[j]);
+        const side = options.sort((a,b) => Math.abs(a.x-holder.x)-Math.abs(b.x-holder.x))[0] || c;
+        d.tx = U.lerp(holder.x, side.x, .55);
+        d.ty = U.lerp(holder.y, side.y, .55);
+      } else if (this.state === 'fly' && this.fly) {
         const from = this.passers[this.holder], to = this.passers[this.fly.target];
         d.tx = U.lerp(c.x, (from.x + to.x) / 2, .7);
         d.ty = U.lerp(c.y, (from.y + to.y) / 2, .7);
@@ -210,9 +251,10 @@ class DogMode {
         d.tx = U.lerp(c.x, holder.x, pressure);
         d.ty = U.lerp(c.y, holder.y, pressure);
       }
-      if (this.dogs.length > 1) d.tx += (i === 0 ? -1 : 1) * this.env.W * .035;
+      if (this.dogs.length > 1 && !this.youDog) d.tx += (i === 0 ? -1 : 1) * this.env.W * .035;
       const dx = d.tx-d.x, dy = d.ty-d.y, dist = Math.hypot(dx,dy);
-      const step = Math.min(dist, this.cfg.speed * (1 + (this.paceLevel - 1) * .12) * dt);
+      const speed = i === 0 && this.youDog ? 240 : this.cfg.speed * (1 + (this.paceLevel - 1) * .12);
+      const step = this.env.tutorial ? 0 : Math.min(dist, speed * dt);
       d.moving = step > .15;
       const ox = d.x;
       if (dist > 0) { d.x += dx/dist*step; d.y += dy/dist*step; }
@@ -225,11 +267,11 @@ class DogMode {
       const f = this.fly, t = U.easeOut(U.clamp(f.t,0,1));
       const bx = U.lerp(f.from.x,f.to.x,t), by = U.lerp(f.from.y,f.to.y,t);
       // Отбор происходит у мяча, а не по случайному броску при старте паса.
-      const catcher = f.outcome === 'ok' && f.t > .08 && f.t < .95
+      const catcher = !this.env.tutorial && f.outcome === 'ok' && f.t > .08 && f.t < .95
         && this.dogs.find(d => this._distanceToSegment(d,
           {x:U.lerp(f.from.x,f.to.x,previous),y:U.lerp(f.from.y,f.to.y,previous)},
           {x:bx,y:by}) < this.cfg.reach + 6);
-      if (catcher) { f.outcome = 'steal'; f.to = {x:catcher.x,y:catcher.y}; f.t = 1; }
+      if (catcher) { f.outcome = 'steal'; f.catcher = catcher; f.to = {x:catcher.x,y:catcher.y}; f.t = 1; }
       if (this.fly.t >= 1) this._resolve();
     }
     if (this.lastSteal >= 0) { this.lastSteal += dt; if (this.lastSteal > .8) this.lastSteal = -1; }
@@ -238,10 +280,10 @@ class DogMode {
   _botPass() {
     const recs = this._receivers();
     if (!recs.length) { this._finish(true); return; }
-    const target = recs[Math.floor(Math.random() * recs.length)];
+    const target = recs[Math.floor(this.random() * recs.length)];
     const from = this.passers[this.holder], to = this.passers[target];
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    this._pass({ angle, len: Math.min(this.env.W, this.env.H) * (.20 + Math.random() * .12) });
+    this._pass({ angle, len: Math.min(this.env.W, this.env.H) * (.20 + this.random() * .12) });
   }
 
   draw(ctx) {
@@ -293,7 +335,7 @@ class DogMode {
             kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .22) : false });
         ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
         ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
-        ctx.fillText(i === 0 ? 'ТЫ' : `${i + 1}`, n.x, n.y + 19 * s);
+        ctx.fillText(i === 0 && !this.youDog ? 'ТЫ' : `${i + 1}`, n.x, n.y + 19 * s);
         if (this.errors[i]) {
           ctx.fillStyle = '#ffd24d'; ctx.font = `700 ${Math.round(11 * s)}px Rubik`;
           ctx.fillText(`${this.errors[i]}/10`, n.x, n.y + 32 * s);
@@ -306,6 +348,10 @@ class DogMode {
         ctx.fillStyle = 'rgba(255,152,72,.9)';
         ctx.beginPath(); ctx.ellipse(d.x, d.y + 3, 9 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
         Yards.drawPlayer(ctx, d.x, d.y, s, '#d25743', 'field', { phase: d.phase, moving: d.moving, face: d.face });
+        if (this.youDog && it.i === 0) {
+          ctx.fillStyle = '#9bf36a'; ctx.font = '800 13px Rubik'; ctx.textAlign = 'center';
+          ctx.fillText('ТЫ', d.x, d.y + 18);
+        }
         if (this.lastSteal >= 0) Yards.drawEmote(ctx, d.x, d.y - 160 * s, .85, '😎');
       }
     });
@@ -320,9 +366,9 @@ class DogMode {
   }
 
   _finish(won) {
-    const newBest = Save.setBest('dog', this.score);
-    const coins = this.score * 4 + (won ? 25 : 0) + (newBest ? 15 : 0);
-    Save.addCoins(coins);
+    const newBest = !this.env.challenge && Save.setBest('dog', this.score);
+    const coins = this.env.challenge ? 0 : this.score * 4 + (won ? 25 : 0) + (newBest ? 15 : 0);
+    if (coins) Save.addCoins(coins);
     this.env.finish({
       title: won ? 'Победа!' : 'Водящий отнял мяч',
       score: `${this.score} очк.`,

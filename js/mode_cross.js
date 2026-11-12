@@ -3,6 +3,7 @@
 class CrossMode {
   constructor(env) {
     this.env = env;
+    this.random = env.random || Math.random;
     const { W, H } = env;
     this.level = Difficulty.index(env.difficulty);
     const atlasCourt = Boolean(Yards.theme().atlas);
@@ -20,7 +21,9 @@ class CrossMode {
     this.combo = null;
     this._lastGoal = false; this._lastSaved = false;
     this.serveN = 0;
-    this.total = 12;
+    this.total = env.challenge?.rounds || 12;
+    this.delivery = 'near';
+    this.contact = [.51,.80];
     this.state = 'wait';
     this.waitT = .7;
     this.flight = null;
@@ -83,9 +86,15 @@ class CrossMode {
     this.serveN++;
     this.env.hud.setPill('turn', `${this.serveN}/${this.total}`);
     const { W, H } = this.env;
-    this.landing = { x: W * (.42 + Math.random() * .16), y: H * (.66 + Math.random() * .07) };
+    this.landing = { x: W * (.42 + this.random() * .16), y: H * (.66 + this.random() * .07) };
     this._roles();
     const r = this.roles;
+    if (this.env.tutorial) { this._setPositions(); this._startCross(); return; }
+    this.delivery = 'near';
+    this.env.choose?.(r.S === 0 ? [
+      { text:'На ближнюю', action:() => { this.delivery = 'near'; } },
+      { text:'На дальнюю', action:() => { this.delivery = 'far'; } }
+    ] : []);
     this.combo = { order: [r.S, r.a, r.b], step: 0, holder: r.S, ball: null, clock: 0, waitT: .55, limit: [3.7,3.1,2.6,2.25,1.95][this.level] };
     this.state = 'combo';
     this.dive = 0;
@@ -110,6 +119,7 @@ class CrossMode {
     this._comboPass();
   }
   _comboFail(reason) {
+    this.env.choose?.([]);
     const shooter = this.roles.S;
     this.env.hud.toast(`${reason}. ${this._name(shooter)} — в ворота!`, 'bad');
     Sound.miss();
@@ -122,9 +132,15 @@ class CrossMode {
   }
   _startCross() {
     const b = this.players[this.roles.b];
+    this.env.choose?.([]);
+    const far = this.delivery === 'far';
+    this.landing.x = this.env.W * (far ? .40 : .61);
+    this.landing.y = this.env.H * (far ? .72 : .67);
+    this.contact = far ? [.61,.75] : [.51,.80];
+    this.botSide = this.random() < .5 ? -1 : 1;
     b.kickT = .25;
     this.state = 'serve';
-    this.flight = { t: 0, dur: [2.0,1.75,1.5,1.35,1.2][this.level], from: { x: b.x, y: b.y - 30 } };
+    this.flight = { t: 0, dur: this.env.tutorial ? 2.6 : [2.0,1.75,1.5,1.35,1.2][this.level], from: { x: b.x, y: b.y - 30 } };
     this.env.hud.hint(this.shooterIndex === 0 ? 'Навес! Ударь в нужный момент: проведи к левому или правому углу!' :
       this.keeperIndex === 0 ? 'Ты в воротах: проведи в сторону удара!' : `${this._name(this.shooterIndex)} бьёт. Следи за навесом`);
     Sound.pass();
@@ -140,15 +156,15 @@ class CrossMode {
     let pts = 0, reason = '';
     if (t < .42) reason = 'Слишком рано';
     else if (t > .96) reason = 'Не успел';
-    else if (t >= .54 && t <= .78) { pts = 100; reason = 'С лёта'; }
-    else if (t > .78 && t <= .9) { pts = 75; reason = 'Головой'; }
+    else if (t >= this.contact[0] && t <= this.contact[1]) { pts = this.delivery === 'far' ? 120 : 100; reason = 'С лёта'; }
+    else if (t > this.contact[1] && t <= .9) { pts = 75; reason = 'Головой'; }
     else { pts = 40; reason = 'Дотянулся'; }
     if (d.dy > 30) { pts = 0; reason = 'Скидка не попала в ворота'; }
     this._resolveShot(side, pts, reason);
   }
   _botStrike() {
-    const side = Math.random() < .5 ? -1 : 1;
-    const r = Math.random();
+    const side = this.botSide;
+    const r = this.random();
     const pts = r < .24 ? 0 : r < .72 ? 75 : 100;
     this._resolveShot(side, pts, pts ? 'Удар с навеса' : 'Промах');
   }
@@ -156,8 +172,8 @@ class CrossMode {
     if (this.state !== 'serve') return;
     const shooter = this.shooterIndex;
     const keeper = this.keeperIndex;
-    const keeperGuess = keeper === 0 ? this.dive : (Math.random() < .6 ? side : -side);
-    let saved = potential > 0 && keeperGuess === side && Math.random() < (keeper === 0 ? .8 : .55);
+    const keeperGuess = keeper === 0 ? this.dive : (this.random() < .6 ? side : -side);
+    const saved = !this.env.tutorial && potential > 0 && keeperGuess === side && this.random() < (keeper === 0 ? .8 : .55);
     const points = saved ? 0 : potential;
     if (saved) reason = 'Вратарь отбил!';
     this.state = 'shot';
@@ -166,10 +182,19 @@ class CrossMode {
     this.shot = {
       from: this._ballPos(), to: {
         x: this.goal.x + this.goal.w * (side < 0 ? .16 : .84),
-        y: points ? this.goal.y - this.goal.h * .4 : this.goal.y - this.goal.h - 24
+        y: points || saved ? this.goal.y - this.goal.h * .4 : this.goal.y - this.goal.h - 24
       },
       t: 0, dur: .42, saved, side
     };
+    if ((points && shooter === 0) || (saved && keeper === 0)) {
+      this.env.highlight?.({from:this.shot.from, to:this.shot.to, arc:24, goal:{...this.goal}, label:saved ? 'Сейв' : reason});
+    }
+    if (points && shooter === 0) this.env.progress?.('goal');
+    if (this.env.tutorial) {
+      if (points) this.lessonDone = true;
+      else this.env.hud.hint('Дождись золотой зоны и проведи к углу ворот.');
+      return;
+    }
     if (potential > 0) {
       this.dive = keeperGuess;
       this.keeperTarget = this.goal.x + this.goal.w * (keeperGuess < 0 ? .18 : .82);
@@ -216,7 +241,7 @@ class CrossMode {
         if (c.clock > c.limit) this._comboFail('Долго держишь мяч');
       } else {
         c.waitT -= dt;
-        if (c.waitT <= 0) { if (Math.random() < .07) this._comboFail(`${this._name(c.holder)}: потеря мяча`); else this._comboPass(); }
+        if (c.waitT <= 0) { if (this.random() < .07) this._comboFail(`${this._name(c.holder)}: потеря мяча`); else this._comboPass(); }
       }
     }
     if (this.state === 'wait') {
@@ -231,6 +256,11 @@ class CrossMode {
       this.shot.t += dt / this.shot.dur;
       if (this.shot.t >= 1) {
         this.shot = null;
+        if (this.env.tutorial) {
+          if (this.lessonDone) this.env.learned?.();
+          else { this.serveN = 0; this.state = 'wait'; this.waitT = .65; }
+          return;
+        }
         if (this.pendingKeeper !== null) {
           this.keeperIndex = this.pendingKeeper;
           this.pendingKeeper = null;
@@ -293,10 +323,14 @@ class CrossMode {
     }
     if (this.state === 'serve') {
       const t = this.flight.t / this.flight.dur;
-      ctx.strokeStyle = t >= .54 && t <= .78 ? '#ffd24d' : 'rgba(255,255,255,.7)';
+      ctx.strokeStyle = t >= this.contact[0] && t <= this.contact[1] ? '#ffd24d' : 'rgba(255,255,255,.7)';
       ctx.lineWidth = 4; ctx.beginPath();
       ctx.ellipse(this.landing.x, this.landing.y, 30 - t * 14, 14 - t * 5, 0, 0, 7); ctx.stroke();
       const b = this._ballPos(); Yards.drawBall(ctx, b.x, b.y, 11 + t * 3, undefined, true);
+      if (this.keeperIndex === 0 && t >= .30 && t < .72) {
+        ctx.fillStyle = '#ffdf81'; ctx.font = '800 30px Rubik'; ctx.textAlign = 'center';
+        ctx.fillText(this.botSide < 0 ? '←' : '→', this.goal.x + this.goal.w/2, this.goal.y + 28);
+      }
     }
     if (this.state === 'shot' && this.shot) {
       const f = this.shot, t = U.easeOut(U.clamp(f.t, 0, 1));
@@ -327,11 +361,11 @@ class CrossMode {
     const you = this.players[0].score;
     const bestRival = Math.max(...this.players.slice(1).map(p => p.score));
     const won = you >= bestRival;
-    const newBest = Save.setBest('cross', you);
-    const coins = Math.round(you / 10) + (won ? 30 : 0) + (newBest ? 15 : 0);
-    Save.addCoins(coins);
+    const newBest = !this.env.challenge && Save.setBest('cross', you);
+    const coins = this.env.challenge ? 0 : Math.round(you / 10) + (won ? 30 : 0) + (newBest ? 15 : 0);
+    if (coins) Save.addCoins(coins);
     this.env.finish({ title: won ? 'Победа в навесе!' : 'Соперники точнее',
-      score: `${you} : ${bestRival}`, sub: '12 розыгрышей • промахнувшийся идёт в ворота',
+      score: `${you} : ${bestRival}`, sub: `Розыгрышей: ${this.total} · промахнувшийся идёт в ворота`,
       moment: this.bestMoment ? '★ Лучший удар: ' + this.bestMoment : '', coins, newBest });
   }
   destroy() {}

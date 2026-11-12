@@ -11,6 +11,11 @@ const Save = (() => {
     difficulty: 'normal',
     cup: null,
     cupsWon: { square: 0, am300: 0 },
+    activities: {},
+    badges: 0,
+    customYard: null,
+    editorPacks: [],
+    playStats: { first: '', last: '', days: 0, matches: 0, lesson: 0 },
     best: { dog: 0, square: 0, am300: 0, cross: 0 },
     tutorialSeen: { dog: false, square: false, am300: false, cross: false },
     settings: { sound: true, vibro: true }

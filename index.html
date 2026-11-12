@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261112-14a">
+<link rel="stylesheet" href="css/style.css?v=20261112-15b">
 </head>
 <body>
 <div id="app">
@@ -26,10 +26,12 @@
       <div class="home-yard-label" id="home-yard-label">Классический двор</div>
       <div class="home-actions">
         <button class="btn btn-primary btn-big" id="btn-play">▶ Играть</button>
+        <button class="btn btn-green daily-button" id="btn-daily"><span>Вызов дня</span><small id="home-daily-label"></small></button>
         <div class="home-row">
           <button class="btn btn-paper" id="btn-shop">🛒 Магазин</button>
           <button class="btn btn-paper" id="btn-yards">🏠 Мой двор</button>
         </div>
+        <button class="btn btn-paper" id="btn-online">Играть с друзьями</button>
       </div>
       <div class="fair-note">🧢 Косметика — только стиль. На игру не влияет.</div>
     </div>
@@ -91,6 +93,11 @@
           <div class="mode-card-best" id="best-cross"></div>
         </button>
       </div>
+      <div class="mode-extras">
+        <button class="btn btn-paper" id="btn-activities">Испытания</button>
+        <button class="btn btn-paper" id="btn-fast-duel">Быстрая дуэль</button>
+        <button class="btn btn-paper" id="btn-dog-roles">Смена водящего</button>
+      </div>
     </div>
   </section>
 
@@ -106,6 +113,8 @@
       <div class="hud-score-row" id="match-score-row"></div>
     </div>
     <div class="match-hint" id="match-hint"></div>
+    <div class="match-choices hidden" id="match-choices"></div>
+    <button class="btn btn-paper lesson-skip hidden" id="btn-skip-lesson">Пропустить обучение</button>
     <div class="match-toast" id="match-toast"></div>
   </section>
 
@@ -121,6 +130,10 @@
         <div class="result-reward" id="result-reward"></div>
       </div>
       <button class="btn btn-primary btn-big" id="btn-rematch">🔁 Ещё раз</button>
+      <div class="result-actions">
+        <button class="btn btn-green hidden" id="btn-share-result">Вызвать друга</button>
+        <button class="btn btn-paper hidden" id="btn-replay">Повтор момента</button>
+      </div>
       <button class="btn btn-paper btn-exit" id="btn-result-menu">В меню</button>
     </div>
   </section>
@@ -157,15 +170,19 @@
   </div>
 
 </div>
-<script src="js/sound.js?v=20261112-14a"></script>
-<script src="js/save.js?v=20261112-14a"></script>
-<script src="js/competition.js?v=20261112-14a"></script>
-<script src="js/yards.js?v=20261112-14a"></script>
-<script src="js/gesture.js?v=20261112-14a"></script>
-<script src="js/mode_dog.js?v=20261112-14a"></script>
-<script src="js/mode_square.js?v=20261112-14a"></script>
-<script src="js/mode_am300.js?v=20261112-14a"></script>
-<script src="js/mode_cross.js?v=20261112-14a"></script>
-<script src="js/main.js?v=20261112-14a"></script>
+<script src="js/sound.js?v=20261112-15b"></script>
+<script src="js/save.js?v=20261112-15b"></script>
+<script src="js/competition.js?v=20261112-15b"></script>
+<script src="js/activity.js?v=20261112-15b"></script>
+<script src="js/shot-rules.js?v=20261112-15b"></script>
+<script src="js/room-rules.js?v=20261112-15b"></script>
+<script src="js/yards.js?v=20261112-15b"></script>
+<script src="js/gesture.js?v=20261112-15b"></script>
+<script src="js/mode_dog.js?v=20261112-15b"></script>
+<script src="js/mode_square.js?v=20261112-15b"></script>
+<script src="js/mode_am300.js?v=20261112-15b"></script>
+<script src="js/mode_cross.js?v=20261112-15b"></script>
+<script src="js/online.js?v=20261112-15b"></script>
+<script src="js/main.js?v=20261112-15b"></script>
 </body>
 </html>

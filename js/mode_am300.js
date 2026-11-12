@@ -3,9 +3,11 @@
 class Am300Mode {
   constructor(env) {
     this.env = env;
+    this.random = env.random || Math.random;
     const { W, H } = env;
     this.difficulty = env.difficulty || 'normal';
     this.cfg = Difficulty.american(this.difficulty);
+    if (env.tutorial) this.cfg = { ...this.cfg, spread: 0 };
     const atlasCourt = Boolean(Yards.theme().atlas);
     const goalW = atlasCourt ? Math.min(W * .65, H * .22) : W * .72;
     this.goal = Yards.artGoal(W, H) || { x: (W - goalW) / 2, y: H * .42,
@@ -14,7 +16,8 @@ class Am300Mode {
     this.you = 0;
     this.opponents = Array.from({ length: env.opponentCount ?? 1 }, (_, i) => ({ name: `Игрок ${i + 2}`, score: 0 }));
     this.round = 1;
-    this.ballsLeft = 5;
+    this.ballsLeft = env.challenge?.shots || 5;
+    this.targets = new Set();
     this.state = 'aim'; // aim | fly | impact | bot | done
     this.aim = null;    // текущая точка прицела
     this.drag = null;
@@ -28,11 +31,11 @@ class Am300Mode {
 
     env.hud.setPills([
       { id: 'you', lbl: 'Ты', val: 0 },
-      { id: 'balls', lbl: 'Мячи', val: '5' },
+      { id: 'balls', lbl: 'Мячи', val: this.ballsLeft },
       ...this.opponents.map((p, i) => ({ id: `bot${i}`, lbl: p.name, val: 0 }))
     ]);
-    env.hud.setTimer('🎯300');
-    env.hud.hint('Потяни вверх к цели. Отпусти, когда бегунок в золотой зоне');
+    env.hud.setTimer(env.challenge || env.tutorial || env.quick ? '🎯' : '🎯300');
+    env.hud.hint(env.tutorial ? 'Проведи вверх от мяча к центру ворот. Пунктир покажет цель.' : env.challenge?.description || 'Потяни вверх к цели. Отпусти, когда бегунок в золотой зоне');
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim') return;
@@ -42,17 +45,13 @@ class Am300Mode {
       if (this.state !== 'aim') return;
       this.drag = d;
       // прицел = направление жеста от мяча
-      const len = U.clamp(d.len / this.maxDrag, 0, 1);
-      const dirX = d.dx / (d.len || 1), dirY = d.dy / (d.len || 1);
-      const reach = U.lerp(0, this.ballPos.y - (this.goal.y - this.goal.h) + 40, len);
-      this.aim = { x: this.ballPos.x + dirX * Math.abs(reach) * .9,
-                   y: this.ballPos.y + dirY * reach, p: len };
+      this.aim = ShotRules.aim(this.goal, this.ballPos, d, this.maxDrag);
     };
     env.gesture.onEnd = d => {
-      const drag = this.drag; this.drag = null;
+      this.drag = null;
       if (this.state !== 'aim') return;
-      if (!d || !drag || !this.aim || drag.dy > -20) { this.aim = null; return; } // тянуть нужно вверх
-      this._shoot(drag);
+      if (!d || d.dy > -20) { this.aim = null; return; }
+      this._shoot(d);
     };
   }
 
@@ -107,41 +106,20 @@ class Am300Mode {
   }
 
   _shoot(drag) {
-    const p = U.clamp(drag.len / this.maxDrag, 0, 1.1);
-    const ph = this._timing();
-    const timingErr = Math.abs(ph - .5) * 2;          // 0 = идеально
-    const golden = timingErr < this.cfg.window;
-    const powerErr = p < .35 ? (.35 - p) * 3 : p > .95 ? (p - .95) * 4 : 0;
-    const contactErr = timingErr > this.cfg.window ? timingErr * .9 : timingErr * .22;
-    const err = (contactErr + powerErr) * this.goal.w * this.cfg.spread;
-    const a = Math.random() * Math.PI * 2;
-    const hit = { x: this.aim.x + Math.cos(a) * err, y: this.aim.y + Math.sin(a) * err * .7 };
-    if (p < .3) hit.y = this.goal.y - 6; // недолёт — мяч катится низом
     this.state = 'fly';
-    this.fly = { from: { ...this.ballPos }, to: hit, t: 0, dur: .38 + timingErr * .12, golden };
+    this.fly = ShotRules.kick(this.goal, this.ballPos, drag, this.maxDrag, this.oscT, this.cfg, this.random);
     this.aim = null;
     Sound.kick();
   }
 
   _zoneAt(x, y) {
-    const g = this.goal, topY = g.y - g.h;
-    const nineR = g.w * .08;
-    const inX = x > g.x - 10 && x < g.x + g.w + 10;
-    const inY = y > topY - 10 && y < g.y + 6;
-    // Рама проверяется раньше углов: удар в перекладину не станет «девяткой».
-    if (inX && Math.abs(y - topY) < 10) return { name: 'Перекладина', pts: 100 };
-    if (inY && (Math.abs(x - g.x) < 10 || Math.abs(x - (g.x + g.w)) < 10)) return { name: 'Штанга', pts: 50 };
-    // девятки — точное попадание в верхние углы под рамой
-    for (const nx of [g.x + nineR * .8, g.x + g.w - nineR * .8]) {
-      if (Math.hypot(x - nx, y - (topY + nineR * 1.65)) < nineR) return { name: 'Девятка', pts: 75 };
-    }
-    if (x > g.x && x < g.x + g.w && y > topY && y < g.y) return { name: 'Сектор', pts: 25 };
-    return { name: 'Мимо', pts: 0 };
+    return ShotRules.zone(this.goal, x, y);
   }
 
   _impact() {
-    const { to, golden } = this.fly;
-    const z = this._zoneAt(to.x, to.y);
+    const f = this.fly;
+    const { to, golden } = f;
+    const z = f.zone || this._zoneAt(to.x, to.y);
     let pts = z.pts, label = z.name;
     if (z.pts === 75 && golden) { pts = 100; label = 'Девятка + тайминг'; }
     this.impactFx = { x: to.x, y: to.y, t: 0, pts, label };
@@ -151,7 +129,22 @@ class Am300Mode {
     if (pts >= 100) { Sound.goal(); this.env.hud.toast(`${label}! +${pts}`, 'gold'); }
     else if (pts >= 50) { Sound.post(); this.env.hud.toast(`${label}! +${pts}`, 'good'); }
     else if (pts > 0) { Sound.pass(); this.env.hud.toast(`+${pts}`, 'good'); }
-    else { Sound.miss(); this.env.hud.toast('Мимо', 'bad'); }
+    else { Sound.miss(); this.env.hud.toast(f.issue || 'Мимо', 'bad'); }
+    this.env.progress?.(z.id);
+    this.targets.add(z.id);
+    if (this.env.challenge?.distinct) {
+      const names = {post:'Штанга',bar:'Перекладина',corner:'Девятка'};
+      this.env.hud.hint(this.env.challenge.events.map(id => (this.targets.has(id) ? '✓ ' : '○ ') + names[id]).join('  ·  '));
+    }
+    if (pts && f.from) this.env.highlight?.({ from:f.from, to, arc:70, goal:{...this.goal}, label, value:pts });
+    if (this.env.tutorial) {
+      if (pts) this.env.learned?.();
+      else {
+        this.state = 'impact'; this.impactDelay = .45;
+        this.env.hud.hint('Попробуй снова. Пунктир должен дойти до ворот.');
+      }
+      return;
+    }
     this.react = { t: 1.6, pts, by: 'you' };
     if (pts > this.bestVal) { this.bestVal = pts; this.bestMoment = `${label} (+${pts}) на ${this.round}-м круге`; }
     this.you += pts;
@@ -160,19 +153,22 @@ class Am300Mode {
     this.env.hud.setPill('balls', this.ballsLeft);
     this.state = 'impact';
     this.impactDelay = .65;
-    this.env.hud.hideHintSoon();
+    if (!this.env.challenge) this.env.hud.hideHintSoon();
   }
 
   _startBotTurn() {
-    if (!this.opponents.length) { this._finish(this.you >= 300); return; }
+    if (!this.opponents.length) {
+      this._finish(this.env.challenge ? this.env.challenge.events.some(id => this.targets.has(id)) : this.you >= 300);
+      return;
+    }
     this.state = 'bot';
     this.env.hud.toast('Ход соперников…', '');
     const rest = 1 - this.cfg.miss;
     const table = [[0, this.cfg.miss], [25, rest * .42], [50, rest * .26], [75, rest * .19], [100, rest * .13]];
     this.botQueue = [];
     this.opponents.forEach((_, id) => {
-      for (let i = 0; i < 5; i++) {
-        let r = Math.random(), acc = 0, pts = 0;
+      for (let i = 0; i < (this.env.quick ? 1 : 5); i++) {
+        let r = this.random(), acc = 0, pts = 0;
         for (const [v, p] of table) { acc += p; if (r <= acc) { pts = v; break; } }
         this.botQueue.push({ id, pts });
       }
@@ -184,7 +180,7 @@ class Am300Mode {
     if (this.state === 'impact') {
       this.impactDelay -= dt;
       if (this.impactDelay <= 0) {
-        if (this.ballsLeft <= 0) this._startBotTurn();
+        if (this.ballsLeft <= 0 || this.env.quick) this._startBotTurn();
         else this.state = 'aim';
       }
     }
@@ -216,6 +212,11 @@ class Am300Mode {
             // конец круга — проверяем 300
             const top = Math.max(0, ...this.opponents.map(p => p.score));
             this.botShooter = -1;
+            if (this.env.quick) {
+              if (this.ballsLeft > 0) this.state = 'aim';
+              else this._finish(this.you > top, this.you === top);
+              return;
+            }
             if (this.you >= 300 || top >= 300) {
               if (this.you === top) { this.env.hud.toast('Ничья — ещё круг!', 'gold'); this._nextRound(); }
               else this._finish(this.you > top);
@@ -227,7 +228,7 @@ class Am300Mode {
   }
   // куда летит удар соперника — зависит от результата, мы видим точку попадания
   _botTarget(pts) {
-    const g = this.goal, topY = g.y - g.h, nineR = g.w * .08, r = Math.random;
+    const g = this.goal, topY = g.y - g.h, nineR = g.w * .08, r = this.random;
     if (pts >= 100) return { x: g.x + g.w * (.3 + .4 * r()), y: topY };
     if (pts >= 75) return { x: r() < .5 ? g.x + nineR * .8 : g.x + g.w - nineR * .8, y: topY + nineR * 1.65 };
     if (pts >= 50) return { x: r() < .5 ? g.x : g.x + g.w, y: g.y - g.h * (.2 + .6 * r()) };
@@ -351,7 +352,7 @@ class Am300Mode {
   }
 
   _drawTimingBar(ctx, W, H) {
-    const bw = W * .6, bx = (W - bw) / 2, by = H * .9, bh = 14;
+    const bw = W * .6, bx = (W - bw) / 2, by = H * .70, bh = 14;
     ctx.fillStyle = 'rgba(0,0,0,.55)';
     ctx.beginPath(); ctx.roundRect(bx - 6, by - 6, bw + 12, bh + 12, 10); ctx.fill();
     ctx.fillStyle = '#5a5f6a'; ctx.fillRect(bx, by, bw, bh);
@@ -365,14 +366,14 @@ class Am300Mode {
     ctx.beginPath(); ctx.roundRect(bx + ph * bw - 4, by - 4, 8, bh + 8, 4); ctx.fill();
   }
 
-  _finish(won) {
+  _finish(won, draw = false) {
     const top = Math.max(0, ...this.opponents.map(p => p.score));
-    const newBest = Save.setBest('am300', this.you);
-    const coins = Math.round(this.you / 10) + (won ? 30 : 0) + (newBest ? 15 : 0);
-    Save.addCoins(coins);
+    const newBest = !this.env.challenge && Save.setBest('am300', this.you);
+    const coins = this.env.challenge ? 0 : Math.round(this.you / 10) + (won ? 30 : 0) + (newBest ? 15 : 0);
+    if (coins) Save.addCoins(coins);
     this.env.finish({
-      won,
-      title: !this.opponents.length ? 'Тренировка окончена' : won ? 'Победа!' : 'Соперник оказался точнее',
+      won, draw,
+      title: !this.opponents.length ? 'Серия окончена' : draw ? 'Ничья' : won ? 'Победа!' : 'Соперник оказался точнее',
       score: this.opponents.length ? `${this.you} : ${top}` : `${this.you} очк.`,
       sub: !this.opponents.length ? 'Удары по раме и углам' : won ? `Ты первым дошёл до 300 (${this.round} кр.)` : 'Целься в перекладину и девятку',
       moment: this.bestMoment ? '★ Лучший удар: ' + this.bestMoment : '',

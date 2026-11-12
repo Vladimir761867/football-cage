@@ -14,6 +14,8 @@
   let opponentCount = 1;
   let paused = false, artRevision = 0;
   let matchIsCup = false;
+  let matchOptions = {};
+  let replay = null, lastActivity = null;
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -21,7 +23,10 @@
     screens[name].classList.remove('hidden');
     current = name;
     if (name !== 'match') stopLoop();
-    if (name === 'home') { paintBg('#home-bg'); updateCoins(); updateYardLabel(); }
+    if (name === 'home') {
+      paintBg('#home-bg'); updateCoins(); updateYardLabel();
+      $('#home-daily-label').textContent = Activities.daily().title;
+    }
     if (name === 'modes') { paintBg('#modes-bg'); updateCoins(); updateBests(); updateCompetition(); }
     if (name === 'shop') { paintBg('#shop-bg'); updateCoins(); renderShop(); }
     if (name === 'result') paintBg('#result-bg');
@@ -52,8 +57,14 @@
   const hud = {
     setTimer(v) { $('#match-timer').textContent = v; },
     setPills(arr) {
-      $('#match-score-row').innerHTML = arr.map(p =>
-        `<div class="hud-pill"><span class="lbl">${p.lbl}</span><span class="val" id="pill-${p.id}">${p.val}</span></div>`).join('');
+      const nodes = arr.map(p => {
+        const pill = document.createElement('div'); pill.className = 'hud-pill';
+        const label = document.createElement('span'); label.className = 'lbl'; label.textContent = p.lbl;
+        const value = document.createElement('span'); value.className = 'val'; value.id = 'pill-' + p.id; value.textContent = p.val;
+        pill.append(label,value);
+        return pill;
+      });
+      $('#match-score-row').replaceChildren(...nodes);
     },
     setPill(id, v) { const el = $('#pill-' + id); if (el) el.textContent = v; },
     toast(text, cls) {
@@ -82,18 +93,43 @@
     cross: { cls: CrossMode, title: 'Навес' }
   };
 
-  function startMode(id, inCup = false) {
+  function startMode(id, inCup = false, options = {}) {
     matchIsCup = inCup;
     const cup = inCup ? Cups.begin() : null;
     if (inCup && !cup) return;
-    const matchDifficulty = cup ? Cups.difficulty(cup) : difficulty;
+    matchOptions = options;
+    replay = null; lastActivity = null;
+    const cupTrial = cup?.mode === 'am300' && cup.stage < 2;
+    const challenge = cupTrial ? { ...Activities.definition(cup.stage === 0 ? 'bar' : 'targets'),
+      title: cup.stage === 0 ? 'Попадание в раму' : 'Девятка',
+      events: cup.stage === 0 ? ['bar','post'] : ['corner'], goal:1, distinct:false,
+      description: cup.stage === 0 ? 'За пять ударов попади в штангу или перекладину.' : 'За пять ударов попади в девятку.' }
+      : options.challenge;
+    const progress = challenge && Activities.tracker(challenge);
+    const matchDifficulty = cup ? Cups.difficulty(cup) : options.tutorial ? 'beginner' : challenge?.difficulty || difficulty;
     Yards.syncBallToYard();
+    if (options.online) Yards.setScene(YARDS.ru90_1);
+    else if (challenge) Yards.setScene(challenge.custom ? Yards.editedTheme(challenge.custom) : YARDS[challenge.yard]);
+    else Yards.setScene(Yards.theme());
     paused = false;
     lastModeId = id;
     nav('match');
-    $('#match-title').textContent = cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : MODES[id].title;
+    clearTimeout(hintTimer); clearTimeout(toastTimer);
+    $('#match-toast').textContent = '';
+    $('#match-toast').className = 'match-toast';
+    $('#match-title').textContent = cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : challenge?.title || MODES[id].title;
     $('#match-hint').classList.remove('off');
+    $('#btn-skip-lesson').classList.toggle('hidden', !options.tutorial);
+    choose([]);
     const canvas = $('#match-canvas');
+    canvas.style.width = ''; canvas.style.height = ''; canvas.style.inset = '';
+    if (challenge || options.online) {
+      const viewport = screens.match.getBoundingClientRect();
+      const width = Math.min(viewport.width, viewport.height * 520/1120);
+      canvas.style.width = width + 'px';
+      canvas.style.height = width * 1120/520 + 'px';
+      canvas.style.inset = '0'; canvas.style.margin = 'auto';
+    } else canvas.style.margin = '';
     const r = canvas.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = Math.round(r.width * dpr);
@@ -108,7 +144,25 @@
     const bgCache = {};
     const env = {
       canvas, ctx, W, H, gesture, hud, difficulty: matchDifficulty,
-      opponentCount: cup ? 1 : opponentCount, cup: !!cup,
+      opponentCount: challenge || options.tutorial ? 0 : cup || options.quick ? 1 : opponentCount,
+      cup: !!cup, cupStage: cup?.stage, tutorial: options.tutorial,
+      challenge, quick: options.quick, rotateDog: options.rotateDog, online:options.online, invite:shareRoom,
+      random: challenge ? Activities.random(challenge.key) : Math.random,
+      choose,
+      progress(event) {
+        if (!progress) return;
+        progress.push(event);
+        hud.setPill('objective', `${progress.score}/${challenge.goal}`);
+      },
+      learned() {
+        Save.data.tutorialSeen[id] = true;
+        Save.data.playStats.lesson++;
+        Save.save();
+        showResult({title:'Получилось!', score:'Первый розыгрыш', sub:'Теперь попробуй в матче.', coins:0, lesson:true});
+      },
+      highlight(clip) {
+        if (!replay || (clip.value || 0) >= (replay.value || 0)) replay = { ...clip, W, H, yard: Yards.theme() };
+      },
       bgFor(key, painter) {
         if (!bgCache[key] || bgCache[key].revision !== artRevision) {
           const oc = document.createElement('canvas');
@@ -122,12 +176,37 @@
         ctx.drawImage(bgCache[key], 0, 0, W, H);
       },
       finish(result) {
+        if (progress) {
+          result.won = progress.score >= challenge.goal;
+          if (cupTrial) {
+            result.score = `${progress.score}/${challenge.goal} попаданий`;
+          } else {
+            const record = Activities.record(challenge, progress.score);
+            lastActivity = { challenge, score:progress.score };
+            result = { ...result, title:result.won ? 'Вызов выполнен!' : 'Можно точнее',
+              score:`${progress.score} / ${challenge.goal}`, sub:challenge.description,
+              moment:`Личный лучший результат: ${record.best}` + (challenge.friend !== undefined ? ` · результат друга: ${challenge.friend}` : '') +
+                (record.bonus ? ' · Нашивка дня получена' : ''),
+              coins:record.bonus, newBest:false };
+          }
+        }
         if (cup) result.cupResult = Cups.settle(result);
+        if (!result.aborted) trackMatch();
         stopLoop();
         showResult(result);
       }
     };
-    activeMode = new MODES[id].cls(env);
+    activeMode = options.online ? new OnlineMode(env) : new MODES[id].cls(env);
+    if (challenge) {
+      const badge = document.createElement('div'); badge.className = 'hud-pill';
+      badge.innerHTML = '<span class="lbl">Цель</span><span class="val" id="pill-objective">0</span>';
+      $('#match-score-row').appendChild(badge);
+      hud.setPill('objective', `0/${challenge.goal}`);
+      hud.hint(challenge.description);
+    }
+    if (cup?.mode === 'square') hud.hint(['Отбор. Сохраняй темп и держись в двойке.',
+      'Полуфинал. Сильный свайп отправляет мяч в дальнюю часть четверти.',
+      'Финал. Соперники чаще бьют в твою четверть. Побеждает первый.'][cup.stage]);
     lastT = performance.now();
     loop();
   }
@@ -145,6 +224,34 @@
   function stopLoop() {
     cancelAnimationFrame(rafId);
     if (activeMode) { activeMode.destroy(); activeMode = null; }
+    Yards.setScene(null);
+  }
+
+  function choose(options) {
+    const row = $('#match-choices');
+    row.replaceChildren();
+    row.classList.toggle('hidden', !options.length);
+    screens.match.classList.toggle('has-choices', !!options.length);
+    options.forEach((option, index) => {
+      const b = document.createElement('button'); b.className = 'btn ' + (index === 0 ? 'btn-green' : 'btn-paper');
+      b.textContent = option.text; b.setAttribute('aria-pressed', index === 0);
+      b.onclick = () => {
+        option.action();
+        Array.from(row.children).forEach(el => {
+          el.classList.toggle('btn-green', el === b); el.classList.toggle('btn-paper', el !== b);
+          el.setAttribute('aria-pressed', el === b);
+        });
+      };
+      row.appendChild(b);
+    });
+  }
+
+  function trackMatch() {
+    const stats = Save.data.playStats, date = Activities.day();
+    if (!stats.first) stats.first = date;
+    if (stats.last !== date) { stats.days++; stats.last = date; }
+    stats.matches++;
+    Save.save();
   }
 
   function showResult(res) {
@@ -158,6 +265,10 @@
     $('#result-reward').innerHTML =
       `🪙 +${res.coins} жетонов${res.newBest ? ' &nbsp;•&nbsp; 🏆 Новый рекорд!' : ''}`;
     $('#btn-rematch').textContent = '🔁 Ещё раз';
+    if (res.lesson) $('#btn-rematch').textContent = 'Начать матч';
+    if (matchOptions.online) $('#btn-rematch').textContent = 'Новая комната';
+    $('#btn-share-result').classList.toggle('hidden', !lastActivity && !replay);
+    $('#btn-replay').classList.toggle('hidden', !replay);
     if (res.cupResult) {
       const r = res.cupResult;
       $('#result-title').textContent = r.status === 'won' ? 'Кубок твой!' : r.outcome === 'draw' ? 'Нужна переигровка' : r.outcome === 'loss' ? 'Кубок завершён' : 'Проходишь дальше!';
@@ -186,11 +297,180 @@
     const c = Cups.current();
     modal(`<h3>${mode === 'square' ? 'Кубок квадрата' : 'Кубок американки'}</h3>
       <p>Отбор → полуфинал → финал. Соперники — боты. Сложность растёт до уровня 5.</p>
-      <p>${mode === 'square' ? '4 участника, до 90 секунд. В отборе и полуфинале нужно войти в двойку по наименьшему числу штрафов, в финале — стать первым. 10 штрафов — вылет. Равенство на границе прохода — переигровка.' : 'Три дуэли один на один до 300 очков. Победитель проходит дальше. При равном счёте игра продолжается.'}</p>
+      <p>${mode === 'square' ? '4 участника, до 90 секунд. В отборе и полуфинале нужно войти в двойку по наименьшему числу штрафов, в финале — стать первым. В полуфинале соперники чаще бьют в дальнюю зону, в финале давят на твою четверть. Равенство на границе прохода — переигровка.' : 'Отбор — попасть в раму за пять ударов. Полуфинал — попасть в девятку за пять ударов. Финал — дуэль до 300 очков.'}</p>
       <p>Старт: ${Difficulty.name(difficulty)}. Награда за весь кубок: 120 жетонов.</p>
       ${c && ['ready','playing'].includes(c.status) ? '<p>Новый кубок заменит текущий сохранённый маршрут.</p>' : ''}
       <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button><button class="btn btn-primary" id="start-cup">Начать кубок</button></div>`);
     $('#start-cup').onclick = () => { Cups.start(mode,difficulty); closeModal(); startMode(mode,true); };
+  }
+
+  function playMode(id) {
+    if (Save.data.tutorialSeen[id]) { startMode(id); return; }
+    modal(`<h3>${MODES[id].title}</h3><p>Сделай один розыгрыш с подсказкой и переходи к матчу.</p>
+      <div class="modal-actions"><button class="btn btn-paper" id="direct-match">Сразу в матч</button>
+      <button class="btn btn-primary" id="start-lesson">Попробовать</button></div>`);
+    $('#direct-match').onclick = () => {
+      Save.data.tutorialSeen[id] = true; Save.save();
+      closeModal(); startMode(id);
+    };
+    $('#start-lesson').onclick = () => { closeModal(); startMode(id,false,{ tutorial:true }); };
+  }
+
+  function activityModal(challenge) {
+    const daily = challenge.key === Activities.daily().key && !challenge.custom;
+    const saved = Activities.personal(challenge);
+    modal(`<h3>${challenge.title}</h3>
+      <p>${challenge.description}</p>
+      <p class="feature-small">${challenge.custom ? 'Двор друга' : YARDS[challenge.yard].name} · Уровень 2${daily ? (saved?.reward ? ' · Нашивка получена' : ' · 30 жетонов и нашивка за первое выполнение сегодня') : ''}</p>
+      ${saved ? `<p>Личный лучший результат: <b>${saved.best}</b></p>` : ''}
+      ${challenge.friend !== undefined ? `<p>Результат друга: <b>${challenge.friend}</b></p>` : ''}
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button><button class="btn btn-primary" id="start-activity">Сыграть</button></div>`);
+    $('#start-activity').onclick = () => { closeModal(); startMode(challenge.mode,false,{challenge}); };
+  }
+  function activitiesMenu() {
+    const ids = ['targets','bar','dog','square','cross'];
+    modal(`<h3>Испытания двора</h3><div class="feature-stack">${ids.map(id => {
+      const item = Activities.definition(id);
+      return `<button class="btn btn-paper" data-activity="${id}">${item.title}</button>`;
+    }).join('')}</div><button class="btn btn-primary" data-close>Готово</button>`);
+    $$('#modal-box [data-activity]').forEach(b => b.onclick = () => activityModal(Activities.definition(b.dataset.activity)));
+  }
+  function shareActivity(challenge, score) {
+    copyDialog('Вызови друга','По ссылке откроется то же задание. Друг сыграет в удобное время и сможет прислать свой результат.',Activities.link(challenge,score));
+  }
+  function shareRoom(session) {
+    copyDialog('Приглашение в комнату',`Код ${session.room.code}. Отправь ссылку всем участникам.`,OnlineRooms.link(session));
+  }
+  function copyDialog(title,description,link) {
+    modal(`<h3>${title}</h3><p>${description}</p>
+      <label class="room-fields">Ссылка<input class="share-link" id="share-link" readonly></label>
+      <p class="feature-status" id="share-status" role="status"></p>
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Готово</button><button class="btn btn-primary" id="copy-share">Копировать</button></div>`);
+    $('#share-link').value = link;
+    $('#copy-share').onclick = async () => {
+      try { await navigator.clipboard.writeText(link); if ($('#share-status')) $('#share-status').textContent = 'Ссылка скопирована'; }
+      catch { $('#share-link')?.select(); if ($('#share-status')) $('#share-status').textContent = 'Скопируй выделенную ссылку'; }
+    };
+  }
+
+  function onlineLobby(invite = {}) {
+    modal(`<h3>С друзьями</h3><p>Дуэль в «Американке» на двоих или «Квадрат» на четверых.</p>
+      <div class="room-fields">
+        <label>Адрес сервера комнат<input id="room-origin" type="url" placeholder="https://…" autocomplete="off"></label>
+        <label>Код комнаты<input id="room-code" maxlength="6" autocomplete="off" placeholder="6 символов"></label>
+      </div>
+      <p class="feature-small">Если игра открыта с сервера комнат, адрес можно оставить пустым. Для GitHub Pages нужен адрес отдельного сервера.</p>
+      <p class="feature-status" id="room-status" role="status"></p>
+      <div class="feature-stack"><button class="btn btn-green" id="join-room">Войти по коду</button>
+        <button class="btn btn-primary" data-create-room="am300">Создать дуэль</button>
+        <button class="btn btn-paper" data-create-room="square">Создать квадрат</button></div>`);
+    const origin = $('#room-origin'), code = $('#room-code'), status = $('#room-status');
+    origin.value = invite.server || Save.data.roomOrigin || '';
+    code.value = invite.code || Save.data.roomCode || '';
+    const buttons = $$('#modal-box #join-room, #modal-box [data-create-room]');
+    async function enter(mode, joining) {
+      const roomCode = joining ? code.value.trim().toUpperCase() : '';
+      if (joining && !/^[A-F0-9]{6}$/.test(roomCode)) { status.textContent = 'Введи шестизначный код из приглашения'; return; }
+      buttons.forEach(b => b.disabled = true);
+      status.textContent = 'Подключение…';
+      try {
+        const server = OnlineRooms.origin(origin.value);
+        const session = await OnlineRooms.enter(server,mode,roomCode);
+        if (!status.isConnected || $('#modal-wrap').classList.contains('hidden')) {
+          OnlineRooms.request(server,'/'+session.room.code+'/leave',{body:{},token:session.token}).catch(() => {});
+          return;
+        }
+        Save.data.roomOrigin = origin.value.trim();
+        Save.data.roomCode = session.room.code; Save.save();
+        closeModal(); startMode(session.room.mode,false,{online:session});
+      } catch (e) { status.textContent = e.message; }
+      finally { buttons.forEach(b => b.disabled = false); }
+    }
+    $('#join-room').onclick = () => enter(null,true);
+    $$('#modal-box [data-create-room]').forEach(b => b.onclick = () => enter(b.dataset.createRoom,false));
+  }
+
+  function playReplay() {
+    if (!replay) return;
+    const clip = replay;
+    modal(`<h3>${clip.label}</h3><canvas class="replay-preview" id="replay-canvas"></canvas>
+      <div class="feature-stack"><button class="btn btn-primary" data-close>Готово</button></div>`);
+    const canvas = $('#replay-canvas');
+    canvas.width = 420;
+    canvas.height = Math.round(clip.H/clip.W*420);
+    canvas.style.maxHeight = '58dvh';
+    canvas.style.width = 'auto'; canvas.style.maxWidth = '100%'; canvas.style.margin = 'auto';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(canvas.width/clip.W,0,0,canvas.height/clip.H,0,0);
+    const start = performance.now();
+    function frame(now) {
+      if (!canvas.isConnected || $('#modal-wrap').classList.contains('hidden')) return;
+      const t = U.clamp((now-start-180)/800,0,1);
+      const k = U.easeOut(t);
+      Yards.withScene(clip.yard, () => {
+        Yards.paintGoalScene(ctx,clip.W,clip.H,clip.goal);
+        if (!Yards.artGoal(clip.W,clip.H)) Yards.drawGoalFrame(ctx,clip.goal);
+        Yards.drawBall(ctx,U.lerp(clip.from.x,clip.to.x,k),U.lerp(clip.from.y,clip.to.y,k)-Math.sin(k*Math.PI)*clip.arc,U.lerp(15,8,k),undefined,t<1);
+      });
+      if (t < 1) requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  const editorLabels = {surface:'Покрытие',frame:'Ворота',light:'Свет',kit:'Форма',prop:'Детали'};
+  function yardEditor(previous = Save.data.customYard || {base:Save.data.selectedYard}) {
+    const draft = YardEditor.clean(previous);
+    modal(`<h3>Мой двор</h3><canvas class="yard-editor-preview" id="yard-editor-preview" width="620" height="310"></canvas>
+      <div class="editor-fields">
+        <label>Эпоха<select id="edit-base">${YardEditor.bases.map(id => `<option value="${id}">${YARDS[id].era}</option>`).join('')}</select></label>
+        ${Object.entries(YardEditor.fields).map(([field,values]) => `<label>${editorLabels[field]}<select id="edit-${field}">
+          ${Object.entries(values).map(([key,label]) => `<option value="${key}">${label}${YardEditor.available(field,key) ? '' : ' · набор'}</option>`).join('')}</select></label>`).join('')}
+      </div><p class="feature-status" role="status" id="yard-editor-status"></p>
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Закрыть</button><button class="btn btn-primary" id="save-yard">Выбрать двор</button></div>
+      <div class="feature-stack"><button class="btn btn-paper" id="open-packs">Наборы оформления</button>
+      <button class="btn btn-green" id="share-yard">Вызов в моём дворе</button></div>`);
+    const canvas = $('#yard-editor-preview'), ctx = canvas.getContext('2d');
+    function preview() {
+      const t = YardEditor.clean(draft);
+      Yards.withScene(Yards.editedTheme(t), () => {
+        Yards.paintMenu(ctx,canvas.width,canvas.height);
+        Yards.drawPlayer(ctx,canvas.width*.51,canvas.height*.91,.60,'#3f7fba','field',{moving:false});
+        Yards.drawBall(ctx,canvas.width*.56,canvas.height*.90,9);
+      });
+      const locked = Object.keys(YardEditor.fields).some(key => !YardEditor.available(key,t[key]));
+      $('#yard-editor-status').textContent = locked ? 'Предпросмотр. Для игры открой выбранный набор.' : 'Оформление не меняет правила игры.';
+      $('#save-yard').disabled = locked;
+      $('#share-yard').disabled = locked;
+    }
+    Object.keys(draft).forEach(key => {
+      const field = $('#edit-'+key); field.value = draft[key];
+      field.onchange = () => { draft[key] = field.value; preview(); };
+    });
+    $('#save-yard').onclick = () => {
+      Save.data.customYard = YardEditor.clean(draft); Save.data.selectedYard = 'custom';
+      Yards.syncBallToYard(); closeModal(); nav('home');
+    };
+    $('#open-packs').onclick = () => editorPacks(draft);
+    $('#share-yard').onclick = () => shareActivity({...Activities.definition('targets'),yard:draft.base,custom:YardEditor.clean(draft)});
+    preview();
+  }
+
+  function editorPacks(draft) {
+    modal(`<h3>Наборы оформления</h3><p class="feature-small">Демо-витрина. При разблокировке деньги не списываются.</p>
+      <div class="feature-stack">${Object.entries(YardEditor.packs).map(([id,pack]) => `<button class="btn btn-paper" data-editor-pack="${id}">${pack.title} · ${Save.data.editorPacks.includes(id) ? 'примерить' : pack.price+' ₽ в витрине'}</button>`).join('')}</div>
+      <button class="btn btn-primary" id="back-to-editor">В редактор</button>`);
+    $('#back-to-editor').onclick = () => yardEditor(draft);
+    $$('#modal-box [data-editor-pack]').forEach(b => b.onclick = () => {
+      const id = b.dataset.editorPack, pack = YardEditor.packs[id];
+      if (Save.data.editorPacks.includes(id)) { yardEditor({...draft,...pack.items}); return; }
+      modal(`<h3>${pack.title}</h3><p>${Object.entries(pack.items).map(([k,v]) => YardEditor.fields[k][v]).join(' · ')}</p>
+        <div class="modal-actions"><button class="btn btn-paper" id="try-pack">Примерить</button><button class="btn btn-primary" id="unlock-pack">Открыть в демо</button></div>`);
+      $('#try-pack').onclick = () => yardEditor({...draft,...pack.items});
+      $('#unlock-pack').onclick = () => {
+        Save.data.editorPacks.push(id); Save.save(); Sound.buy();
+        yardEditor({...draft,...pack.items});
+      };
+    });
   }
 
   /* ---------- магазин ---------- */
@@ -339,7 +619,8 @@
       <h3>Настройки</h3>
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro"></button></div>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 14</p>
+      <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 15</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -355,7 +636,7 @@
   function pauseModal() {
     modal(`
       <h3>Пауза</h3>
-      <p>${matchIsCup ? 'При возвращении текущий этап начнётся заново. Пройденные этапы сохранятся.' : 'Выйти из матча? Прогресс партии не сохранится.'}</p>
+      <p>${matchOptions.online ? 'Сетевой матч продолжается, пока открыто это окно. Выход закроет начатую партию.' : matchIsCup ? 'При возвращении текущий этап начнётся заново. Пройденные этапы сохранятся.' : 'Выйти из матча? Прогресс партии не сохранится.'}</p>
       <div class="modal-actions">
         <button class="btn btn-green" data-close>Продолжить</button>
         <button class="btn btn-paper" id="quit-match">Выйти</button>
@@ -366,12 +647,27 @@
   /* ---------- события ---------- */
   $('#btn-play').onclick = () => { Sound.ui(); nav('modes'); };
   $('#btn-shop').onclick = () => { Sound.ui(); shopTab = 'yards'; syncTabs(); nav('shop'); };
-  $('#btn-yards').onclick = () => { Sound.ui(); shopTab = 'yards'; syncTabs(); nav('shop'); };
+  $('#btn-yards').onclick = () => { Sound.ui(); yardEditor(); };
+  $('#btn-daily').onclick = () => activityModal(Activities.daily());
+  $('#btn-online').onclick = () => onlineLobby();
+  $('#btn-activities').onclick = activitiesMenu;
+  $('#btn-fast-duel').onclick = () => startMode('am300',false,{quick:true});
+  $('#btn-dog-roles').onclick = () => startMode('dog',false,{rotateDog:true});
+  $('#btn-share-result').onclick = () => {
+    if (lastActivity) shareActivity(lastActivity.challenge,lastActivity.score);
+    else if (replay) shareActivity(Activities.definition(lastModeId === 'cross' ? 'cross' : 'targets'));
+  };
+  $('#btn-replay').onclick = playReplay;
+  $('#btn-skip-lesson').onclick = () => {
+    Save.data.tutorialSeen[lastModeId] = true; Save.save();
+    stopLoop(); startMode(lastModeId);
+  };
   $('#btn-settings').onclick = settingsModal;
   $('#btn-pause').onclick = pauseModal;
   $('#btn-rematch').onclick = () => {
     Sound.ui();
-    if (!matchIsCup) startMode(lastModeId);
+    if (matchOptions.online) onlineLobby();
+    else if (!matchIsCup) startMode(lastModeId,false,matchOptions.tutorial ? {} : matchOptions);
     else if (Cups.current().status === 'ready') startMode(Cups.current().mode,true);
     else openCup(Cups.current().mode);
   };
@@ -379,7 +675,7 @@
   $('#continue-cup').onclick = () => startMode(Cups.current().mode,true);
   $('#btn-result-menu').onclick = () => { Sound.ui(); nav('modes'); };
   $$('[data-nav]').forEach(b => b.onclick = () => { Sound.ui(); nav(b.dataset.nav); });
-  $$('.mode-card').forEach(b => b.onclick = () => { Sound.ui(); startMode(b.dataset.mode); });
+  $$('.mode-card').forEach(b => b.onclick = () => { Sound.ui(); playMode(b.dataset.mode); });
   $$('.difficulty-btn').forEach(b => b.onclick = () => {
     Sound.ui(); difficulty = b.dataset.difficulty;
     Save.data.difficulty = difficulty; Save.save(); updateCompetition();
@@ -416,4 +712,8 @@
   });
   Yards.syncBallToYard();
   nav('home');
+  const params = new URLSearchParams(location.search);
+  const invitation = Activities.fromLink(params);
+  if (invitation) activityModal(invitation);
+  else if (/^[A-F0-9]{6}$/.test(params.get('room') || '')) onlineLobby({code:params.get('room'),server:params.get('server') || ''});
 })();
