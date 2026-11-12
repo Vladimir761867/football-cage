@@ -37,9 +37,12 @@ const Activities = (() => {
     if (!challenge) return null;
     const score = params.get('score');
     const yard = (params.get('yard') || '').split('.');
-    if (yard.length === 6 && courts.includes(yard[0])) {
+    if ((yard.length === 6 || yard.length === 7) && YardEditor.bases.includes(yard[0])) {
       challenge.yard = yard[0];
-      challenge.custom = YardEditor.clean({ base: yard[0], surface: yard[1], frame: yard[2], light: yard[3], kit: yard[4], prop: yard[5] });
+      challenge.custom = YardEditor.clean({
+        base: yard[0], surface: yard[1], frame: yard[2], light: yard[3], kit: yard[4],
+        prop: yard[5], props: yard[6]?.split(',')
+      });
     }
     if (score !== null && /^\d{1,3}$/.test(score)) challenge.friend = +score;
     return challenge;
@@ -49,7 +52,10 @@ const Activities = (() => {
     url.search = ''; url.hash = '';
     url.searchParams.set('challenge', c.key);
     if (Number.isInteger(score)) url.searchParams.set('score', score);
-    if (c.custom) url.searchParams.set('yard', ['base','surface','frame','light','kit','prop'].map(k => c.custom[k]).join('.'));
+    if (c.custom) {
+      const yard = YardEditor.clean(c.custom);
+      url.searchParams.set('yard', [yard.base, yard.surface, yard.frame, yard.light, yard.kit, yard.prop, yard.props.join(',')].join('.'));
+    }
     return url.href;
   }
   function tracker(c) {
@@ -67,7 +73,12 @@ const Activities = (() => {
       get hits() { return [...hits]; }
     };
   }
-  function resultKey(c) { return c.key + (c.custom ? ':' + Object.values(c.custom).join('.') : ''); }
+  function resultKey(c) {
+    if (!c.custom) return c.key;
+    const yard = YardEditor.clean(c.custom);
+    const legacy = [yard.base, yard.surface, yard.frame, yard.light, yard.kit, yard.prop].join('.');
+    return c.key + ':' + legacy + (yard.props.length > 1 || (yard.props.length && yard.prop === 'none') ? '.' + yard.props.join(',') : '');
+  }
   function personal(c) { return Save.data.activities[resultKey(c)]; }
   function record(c, score) {
     const key = resultKey(c);
@@ -86,13 +97,23 @@ const Activities = (() => {
 })();
 
 const YardEditor = {
-  bases: ['ru80_1','ru90_1','ru00_1','ru10_1','ru20_1'],
+  get bases() {
+    return Object.values(YARDS).filter(yard => yard.atlas || yard.photo).map(yard => yard.id);
+  },
   fields: {
     surface: { original: 'Родное покрытие', wet: 'Мокрый асфальт', turf: 'Газон', clay: 'Красный грунт' },
     frame: { original: 'Родные ворота', metal: 'Белый металл', retro: 'Красно-белые', blue: 'Синие стойки' },
     light: { original: 'Родной свет', warm: 'Тёплый фонарь', dusk: 'Синие сумерки' },
     kit: { blue: 'Синяя форма', green: 'Зелёная форма', red: 'Красная куртка' },
     prop: { none: 'Без деталей', bench: 'Лавка', lamp: 'Фонарь', flags: 'Флажки' }
+  },
+  decorations: {
+    bench: 'Лавочка',
+    grandma: 'Бабушка с семечками',
+    boys: 'Районные ребята',
+    neighbor: 'Соседка в окне',
+    lamp: 'Фонарь',
+    flags: 'Флажки'
   },
   packs: {
     evening: { title: 'Вечер после дождя', price: 199, items: { surface: 'wet', frame: 'retro', light: 'warm', prop: 'lamp' } },
@@ -103,6 +124,9 @@ const YardEditor = {
     for (const [key, options] of Object.entries(this.fields)) {
       result[key] = Object.hasOwn(options, data[key]) ? data[key] : Object.keys(options)[0];
     }
+    const requested = Array.isArray(data.props) ? data.props : [result.prop];
+    result.props = Object.keys(this.decorations).filter(id => requested.includes(id));
+    result.prop = result.props.find(id => Object.hasOwn(this.fields.prop, id)) || 'none';
     return result;
   },
   available(field, value) {

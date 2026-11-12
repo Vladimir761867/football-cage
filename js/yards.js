@@ -72,6 +72,19 @@ RUSSIAN_COURTS.forEach(([code, era, names, surfaces]) => names.forEach((name, va
   };
 }));
 
+[
+  ['es80_madrid', '80', '80-е', 'Мадрид', 'Кирпичные дома, зелёная ограда и потёртый бетон в синих сумерках.', 'madrid', true, [.301,.458,.394,.136], [.707,.374]],
+  ['es00_sevilla', '00', '2000-е', 'Севилья · Триана', 'Белые стены, керамика и апельсиновые деревья на закате.', 'sevilla', false, [.269,.372,.456,.167], [.706,.309]],
+  ['es20_barcelona', '20', '2020-е', 'Барселона', 'Вечерняя площадка с синим покрытием, сеткой и тёплыми окнами.', 'barcelona', false, [.275,.450,.450,.146], [.760,.281]]
+].forEach(([id, decade, era, city, desc, file, free, goal, window]) => {
+  YARDS[id] = {
+    ...YARDS.classic, id, decade, era, country: 'Испания', city, desc,
+    name: `${city} · ${era}`, items: 'Площадка для мини-футбола',
+    photo: { file, aspect: 2 / 3, goal, window },
+    free, priceCoins: free ? 0 : 180
+  };
+});
+
 const BALLS = {
   classic:   { id: 'classic',   name: 'Чёрно-белая классика', era: 'Базовый / 90-е', price: 0,   atlas: 1, material: 'потёртая синтетика', c1: '#f2ede2', c2: '#262626', style: 'penta' },
   leather80: { id: 'leather80', name: 'Кожаный с ручным швом', era: '80-е', price: 0,   atlas: 0, material: 'тяжёлая кожа', c1: '#9c6b3f', c2: '#6e4526', style: 'seams' },
@@ -156,9 +169,20 @@ Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.va
 const Yards = (() => {
 
   let scene = null;
+  const photos = new Map();
+  function photoAsset(file) {
+    if (!photos.has(file)) {
+      const img = new Image();
+      photos.set(file, img);
+      img.addEventListener('load', () => window.dispatchEvent(new Event('art-ready')));
+      img.src = 'assets/' + file + '.webp?v=18';
+    }
+    return photos.get(file);
+  }
   function editedTheme(preset) {
     const custom = YardEditor.clean(preset);
-    return { ...YARDS[custom.base], id:'custom', name:`Мой двор · ${YARDS[custom.base].era}`, custom };
+    const base = YARDS[custom.base];
+    return { ...base, id:'custom', name:`Мой двор · ${base.country} · ${base.era}`, custom };
   }
   function theme() {
     if (scene) return scene;
@@ -172,7 +196,7 @@ const Yards = (() => {
     try { return draw(); } finally { scene = before; }
   }
   function ballEra(t = theme()) {
-    return t.atlas || (t.id.startsWith('classic_80') ? '80' : '90');
+    return t.decade || t.atlas || (t.id.startsWith('classic_80') ? '80' : '90');
   }
   function ballsForEra(era = ballEra()) {
     return Object.values(BALLS).filter(b => b.decade === era);
@@ -199,16 +223,25 @@ const Yards = (() => {
   function ready(img) { return img && img.complete && img.naturalWidth > 0; }
 
   function atlasPlacement(w, h, t) {
-    const aspect = t.atlas === '00' ? (2167 / 3) / 725 : 1;
+    if (t.photo && w <= h) {
+      const bottom = t.photo.goal[1] + t.photo.goal[3];
+      const crop = (bottom - .47) / (1 - .47);
+      const dh = h / (1 - crop);
+      const dw = Math.max(w, Math.min(dh * t.photo.aspect, w * 1.42));
+      return { x: (w-dw)/2, y: -crop*dh, w: dw, h: dh };
+    }
+    const aspect = t.photo?.aspect || (t.atlas === '00' ? (2167 / 3) / 725 : 1);
     const dh = Math.max(h, w / aspect), dw = dh * aspect;
-    const g = COURT_GOALS[t.atlas][t.variant];
+    const g = t.photo?.goal || COURT_GOALS[t.atlas][t.variant];
     const x = Math.max(w - dw, Math.min(0, w / 2 - dw * (g[0] + g[2] / 2)));
-    return { x, y: (h - dh) / 2, w: dw, h: dh };
+    // Панорамный предпросмотр держит линию ворот внутри кадра.
+    const y = Math.min(0, Math.max(h - dh, h * .60 - (g[1] + g[3]) * dh));
+    return { x, y: h / dh < .75 ? y : (h - dh) / 2, w: dw, h: dh };
   }
   function goalGeometry(w, h, fallback) {
     const t = theme();
-    if (!t.atlas) return fallback;
-    const p = atlasPlacement(w, h, t), g = COURT_GOALS[t.atlas][t.variant];
+    if (!t.atlas && !t.photo) return fallback;
+    const p = atlasPlacement(w, h, t), g = t.photo?.goal || COURT_GOALS[t.atlas][t.variant];
     return { x: p.x + g[0] * p.w, y: p.y + (g[1] + g[3]) * p.h, w: g[2] * p.w, h: g[3] * p.h };
   }
 
@@ -236,7 +269,7 @@ const Yards = (() => {
   // 4 экранных угла начерченного квадрата (TL, TR, BR, BL) или null
   function courtQuad(w, h) {
     const t = theme();
-    if (t.atlas) { // у триптихов квадрата на картинке нет — берём площадку на полу кадра
+    if (t.atlas || t.photo) { // Игровая разметка лежит на свободной части кадра.
       return [[.17, .53], [.83, .53], [.97, .88], [.03, .88]].map(([nx, ny]) => ({ x: nx * w, y: ny * h }));
     }
     const ru = isRussia90(t);
@@ -249,7 +282,7 @@ const Yards = (() => {
   // Экранный прямоугольник нарисованных ворот {x, y(земля), w, h} или null
   function artGoal(w, h) {
     const t = theme();
-    if (t.atlas) return goalGeometry(w, h);
+    if (t.atlas || t.photo) return goalGeometry(w, h);
     const ru = isRussia90(t);
     const img = ru ? ART.russia90Goal : ART.classicGoal;
     if (!ready(img)) return null;
@@ -269,7 +302,7 @@ const Yards = (() => {
   // есть ли разметка квадрата на самой картинке (иначе её рисуем мы)
   function courtHasChalk() {
     const t = theme();
-    if (t.atlas) return false;
+    if (t.atlas || t.photo) return false;
     return ready(isRussia90(t) ? ART.russia90Square : ART.classicSquare);
   }
   // Меловая разметка по перспективе квадрата: контур (если его нет на арте),
@@ -357,22 +390,84 @@ const Yards = (() => {
       glow.addColorStop(1,'rgba(25,34,52,0)');
       ctx.fillStyle=glow; ctx.fillRect(0,0,w,h);
     }
-    if (c.prop === 'bench' || c.prop === 'lamp') {
-      ctx.translate(w*.065,ground+16*unit); ctx.scale(unit,unit);
-      if (c.prop === 'bench') bench(ctx,0,0,.66);
-      else lampPost(ctx,0,0,t);
-    } else if (c.prop === 'flags') {
-      ctx.scale(unit,unit); bunting(ctx,w*.1/unit,(ground-g.h*.96)/unit,w*.9/unit,(ground-g.h)/unit);
+    if (c.props.includes('flags')) {
+      ctx.save(); ctx.scale(unit,unit);
+      bunting(ctx,w*.1/unit,(ground-g.h*.96)/unit,w*.9/unit,(ground-g.h)/unit);
+      ctx.restore();
+    }
+    if (c.props.includes('lamp')) {
+      ctx.save(); ctx.translate(w*.965,ground+10*unit); ctx.scale(unit,unit);
+      lampPost(ctx,0,0,t);
+      ctx.restore();
+    }
+    if (c.props.includes('bench')) {
+      ctx.save(); ctx.translate(w*.025,ground+14*unit); ctx.scale(unit,unit);
+      if (!decoration(ctx, 'bench', 38, 0, 76)) bench(ctx,0,0,.66);
+      ctx.restore();
+    }
+    if (c.props.includes('grandma')) {
+      decoration(ctx, 'grandma', w*.21, ground+22*unit, 65*unit);
+    }
+    if (c.props.includes('boys')) {
+      decoration(ctx, 'boys', w*.88, ground+14*unit, 112*unit);
+    }
+    if (c.props.includes('neighbor')) {
+      const a = neighborWindow(w,h,g,t);
+      ctx.fillStyle = '#1c2027';
+      ctx.fillRect(a.x-17*unit,a.y-34*unit,34*unit,36*unit);
+      ctx.strokeStyle = '#dbbda1'; ctx.lineWidth = 2*unit;
+      ctx.strokeRect(a.x-17*unit,a.y-34*unit,34*unit,36*unit);
+      decoration(ctx, 'neighbor', a.x, a.y, 30*unit);
     }
     ctx.restore();
   }
 
-  function paintRussianAtlas(ctx, w, h, t) {
-    if (!t.atlas || !ready(ART.russian[t.atlas])) return false;
-    const img = ART.russian[t.atlas];
-    const cell = img.naturalWidth / 3;
+  // Прямоугольники вырезок в исходном атласе 1263 × 1246.
+  const decorationCells = {
+    grandma: [89,0,436,671], boys: [660,0,583,661],
+    neighbor: [0,677,598,569], bench: [605,785,658,405]
+  };
+  function decoration(ctx, id, x, feet, size) {
+    const img = photoAsset('yard-spectators');
+    if (!ready(img)) return false;
+    const [sx, sy, sw, sh] = decorationCells[id];
+    const height = size * sh / sw;
+    ctx.drawImage(img, sx, sy, sw, sh, x-size/2, feet-height, size, height);
+    return true;
+  }
+
+  function neighborWindow(w,h,g,t) {
+    if (t.photo && w <= h) {
+      const p = atlasPlacement(w,h,t), [x,y] = t.photo.window;
+      return { x: p.x + x*p.w, y: p.y + y*p.h };
+    }
+    return { x: w*.80, y: Math.max(h*.15, g.y-g.h*.84) };
+  }
+
+  function drawYardReaction(ctx, w, h, elapsed) {
+    const t = theme();
+    const phase = elapsed % 19;
+    if (!t.custom?.props.includes('neighbor') || phase < 12 || phase > 14.8) return;
+    const a = neighborWindow(w,h,goalGeometry(w,h),t);
+    const words = t.country === 'Испания' ? '¡Cuidado con el balón!' : 'Осторожнее с мячом!';
+    ctx.save();
+    ctx.font = '700 16px system-ui';
+    const bw = ctx.measureText(words).width + 22;
+    const x = Math.min(w-bw-10, a.x-bw/2);
+    ctx.fillStyle = 'rgba(30,27,29,.92)';
+    ctx.beginPath(); ctx.roundRect(x, a.y-62, bw, 26, 7); ctx.fill();
+    ctx.fillStyle = '#fff3da'; ctx.textAlign = 'center';
+    ctx.fillText(words, x+bw/2, a.y-44);
+    ctx.restore();
+  }
+
+  function paintPhotoCourt(ctx, w, h, t) {
+    if (!t.photo && !t.atlas) return false;
+    const img = t.photo ? photoAsset(t.photo.file) : ART.russian[t.atlas];
+    if (!ready(img)) return false;
+    const cell = img.naturalWidth / (t.photo ? 1 : 3);
     const p = atlasPlacement(w, h, t);
-    ctx.drawImage(img, t.variant * cell, 0, cell, img.naturalHeight,
+    ctx.drawImage(img, (t.variant || 0) * cell, 0, cell, img.naturalHeight,
       p.x, p.y, p.w, p.h);
     // Общий визуальный язык любимого российского двора: тёплое окно/фонарь,
     // вечернее небо, вид к воротам и свободное поле на переднем плане.
@@ -497,7 +592,7 @@ const Yards = (() => {
   /* ---------- сцена: фон меню ---------- */
   function paintMenu(ctx, w, h) {
     const t = theme();
-    if (paintRussianAtlas(ctx, w, h, t)) return;
+    if (paintPhotoCourt(ctx, w, h, t)) return;
     if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Menu : ART.classicMenu)) {
       return;
     }
@@ -540,7 +635,7 @@ const Yards = (() => {
   /* ---------- сцена: вид сверху («Квадрат») ---------- */
   function paintCourt(ctx, w, h, court) {
     const t = theme();
-    if (paintRussianAtlas(ctx, w, h, t)) return;
+    if (paintPhotoCourt(ctx, w, h, t)) return;
     if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Square : ART.classicSquare)) return;
     const g = ctx.createLinearGradient(0, 0, 0, h);
     g.addColorStop(0, t.asphaltDark); g.addColorStop(.5, t.asphalt); g.addColorStop(1, t.asphaltDark);
@@ -602,8 +697,8 @@ const Yards = (() => {
   /* ---------- сцена: ворота анфас («Американка», «Навес») ---------- */
   function paintGoalScene(ctx, w, h, goal) {
     const t = theme();
-    if (paintRussianAtlas(ctx, w, h, t)) return;
-    if (paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Goal : ART.classicGoal)) return;
+    if (paintPhotoCourt(ctx, w, h, t)) return;
+    if (!t.photo && paintArt(ctx, w, h, isRussia90(t) ? ART.russia90Goal : ART.classicGoal)) return;
     const hor = goal.y - goal.h - 40;
     skyGrad(ctx, w, h, t, hor + 10);
     buildings(ctx, w, hor, t, isRussia90(t) ? 7 : 3);
@@ -636,6 +731,7 @@ const Yards = (() => {
     ctx.lineTo(goal.x + goal.w + 70, h * .8);
     ctx.lineTo(goal.x + goal.w + 40, goal.y + 10);
     ctx.stroke(); ctx.setLineDash([]);
+    if (t.photo) drawGoalFrame(ctx, goal);
     vignette(ctx, w, h);
   }
 
@@ -915,11 +1011,8 @@ const Yards = (() => {
     const ctx = canvas.getContext('2d');
     const w = canvas.width = canvas.clientWidth * 2 || 600;
     const h = canvas.height = canvas.clientHeight * 2 || 300;
-    const saveSel = Save.data.selectedYard;
-    Save.data.selectedYard = yardId;
-    paintMenu(ctx, w, h);
-    Save.data.selectedYard = saveSel;
+    withScene(t, () => paintMenu(ctx, w, h));
   }
 
-  return { theme, editedTheme, setScene, withScene, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
+  return { theme, editedTheme, setScene, withScene, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, drawYardReaction, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
 })();

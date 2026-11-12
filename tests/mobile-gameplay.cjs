@@ -7,6 +7,7 @@ const path = require('node:path');
 function runtime(storage = new Map()) {
   const context = vm.createContext({
     Image: class { addEventListener() {} }, window: { dispatchEvent() {} },
+    URL, location: { href: 'https://example.test/football-cage/' },
     localStorage: { getItem(key) { return storage.get(key) || null; }, setItem(key, value) { storage.set(key, value); } },
     performance: { now: () => 100 },
     Sound: new Proxy({}, { get: () => () => {} }),
@@ -243,6 +244,28 @@ test('friend links preserve fixtures and reject invalid dates or custom field va
   assert.equal(Activities.fromLink(new URLSearchParams('challenge=2026-02-31.targets')),null);
   const a = Activities.random(c.key), b = Activities.random(c.key);
   assert.deepEqual([a(),a(),a()],[b(),b(),b()]);
+});
+
+test('a Spanish yard invitation preserves several decorations and loads with the correct decade', () => {
+  const { Activities, YardEditor, Yards } = runtime();
+  const challenge = Activities.definition('targets', '2026-11-12');
+  const legacy = YardEditor.clean({ base: 'ru90_1', prop: 'bench' });
+  assert.deepEqual(Array.from(legacy.props), ['bench']);
+  const custom = YardEditor.clean({
+    base: 'es00_sevilla', props: ['boys', 'bench', 'neighbor', 'grandma', 'boys', 'invalid']
+  });
+  const received = Activities.fromLink(new URL(Activities.link({ ...challenge, custom })).searchParams);
+  assert.equal(received.yard, 'es00_sevilla');
+  assert.deepEqual(Array.from(received.custom.props), ['bench', 'grandma', 'boys', 'neighbor']);
+  const scene = Yards.editedTheme(received.custom);
+  assert.equal(Yards.ballEra(scene), '00');
+  Yards.withScene(scene, () => {
+    for (const [w, h] of [[320,568], [360,740], [390,844], [430,932]]) {
+      const goal = Yards.goalGeometry(w,h);
+      assert.ok(goal.x > 0 && goal.x + goal.w < w);
+      assert.ok(goal.y < Yards.courtQuad(w,h)[0].y);
+    }
+  });
 });
 
 test('wardrobe offers free everyday clothes in every era and purchases charge once', () => {

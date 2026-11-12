@@ -16,6 +16,8 @@
   let matchIsCup = false;
   let matchOptions = {};
   let replay = null, lastActivity = null;
+  let matchElapsed = 0;
+  let refreshYardPreview = null;
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -207,6 +209,7 @@
     if (cup?.mode === 'square') hud.hint(['Отбор. Сохраняй темп и держись в двойке.',
       'Полуфинал. Сильный свайп отправляет мяч в дальнюю часть четверти.',
       'Финал. Соперники чаще бьют в твою четверть. Побеждает первый.'][cup.stage]);
+    matchElapsed = 0;
     lastT = performance.now();
     loop();
   }
@@ -217,9 +220,12 @@
     const dt = Math.min(.05, (now - lastT) / 1000);
     lastT = now;
     if (!activeMode || paused || document.hidden) return;
+    matchElapsed += dt;
     activeMode.update(dt);
     if (!activeMode) return; // finish мог сработать внутри update
     activeMode.draw(activeMode.env.ctx);
+    const { ctx, W, H } = activeMode.env;
+    Yards.drawYardReaction(ctx, W, H, matchElapsed);
   }
   function stopLoop() {
     cancelAnimationFrame(rafId);
@@ -423,34 +429,61 @@
     requestAnimationFrame(frame);
   }
 
-  const editorLabels = {surface:'Покрытие',frame:'Ворота',light:'Свет',kit:'Форма',prop:'Детали'};
+  const editorLabels = {surface:'Покрытие',frame:'Ворота',light:'Свет'};
+  const ownsYard = yard => yard.free || Save.data.ownedYards.includes(yard.id);
   function yardEditor(previous = Save.data.customYard || {base:Save.data.selectedYard}) {
     const draft = YardEditor.clean(previous);
-    modal(`<h3>Мой двор</h3><canvas class="yard-editor-preview" id="yard-editor-preview" width="620" height="310"></canvas>
+    modal(`<h3>Мой двор</h3><canvas class="yard-editor-preview" id="yard-editor-preview" width="620" height="360"></canvas>
       <div class="editor-fields">
-        <label>Эпоха<select id="edit-base">${YardEditor.bases.map(id => `<option value="${id}">${YARDS[id].era}</option>`).join('')}</select></label>
-        ${Object.entries(YardEditor.fields).filter(([field]) => field !== 'kit').map(([field,values]) => `<label>${editorLabels[field]}<select id="edit-${field}">
-          ${Object.entries(values).map(([key,label]) => `<option value="${key}">${label}${YardEditor.available(field,key) ? '' : ' · набор'}</option>`).join('')}</select></label>`).join('')}
-      </div><p class="feature-small">Одежда игрока выбирается в магазине → «Одежда».</p><p class="feature-status" role="status" id="yard-editor-status"></p>
-      <div class="modal-actions"><button class="btn btn-paper" data-close>Закрыть</button><button class="btn btn-primary" id="save-yard">Выбрать двор</button></div>
+        <label>Страна<select id="edit-country"><option>Россия</option><option>Испания</option></select></label>
+        <label>Площадка<select id="edit-base"></select></label>
+        ${Object.entries(editorLabels).map(([field,label]) => `<label>${label}<select id="edit-${field}">
+          ${Object.entries(YardEditor.fields[field]).map(([key,label]) => `<option value="${key}">${label}${YardEditor.available(field,key) ? '' : ' · набор'}</option>`).join('')}</select></label>`).join('')}
+      </div>
+      <fieldset class="yard-decorations"><legend>Детали и зрители</legend>
+        ${Object.entries(YardEditor.decorations).map(([id,label]) => `<label>
+          <input type="checkbox" value="${id}" ${draft.props.includes(id) ? 'checked' : ''}>
+          <span>${label}${YardEditor.available('prop',id) ? '' : ' · набор'}</span></label>`).join('')}
+      </fieldset>
+      <p class="feature-status" role="status" id="yard-editor-status"></p>
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Закрыть</button><button class="btn btn-primary" id="save-yard">Сохранить</button></div>
       <div class="feature-stack"><button class="btn btn-paper" id="open-packs">Наборы оформления</button>
       <button class="btn btn-green" id="share-yard">Вызов в моём дворе</button></div>`);
     const canvas = $('#yard-editor-preview'), ctx = canvas.getContext('2d');
+    const country = $('#edit-country'), base = $('#edit-base');
+    country.value = YARDS[draft.base].country;
+    function updateBases() {
+      base.replaceChildren(...YardEditor.bases.map(id => YARDS[id]).filter(y => y.country === country.value)
+        .map(y => new Option(y.name.replace(/^Россия, /, '') + (ownsYard(y) ? '' : ' · в магазине'), y.id)));
+      base.value = draft.base;
+      if (!base.value) base.selectedIndex = 0;
+      draft.base = base.value;
+    }
     function preview() {
+      if (!canvas.isConnected || $('#modal-wrap').classList.contains('hidden')) return;
       const t = YardEditor.clean(draft);
       Yards.withScene(Yards.editedTheme(t), () => {
         Yards.paintMenu(ctx,canvas.width,canvas.height);
         Yards.drawPlayer(ctx,canvas.width*.51,canvas.height*.91,.60,'#3f7fba','field',{moving:false});
         Yards.drawBall(ctx,canvas.width*.56,canvas.height*.90,9);
       });
-      const locked = Object.keys(YardEditor.fields).some(key => key !== 'kit' && !YardEditor.available(key,t[key]));
-      $('#yard-editor-status').textContent = locked ? 'Предпросмотр. Для игры открой выбранный набор.' : 'Оформление не меняет правила игры.';
-      $('#save-yard').disabled = locked;
-      $('#share-yard').disabled = locked;
+      const lockedBase = !ownsYard(YARDS[t.base]);
+      const lockedPack = Object.keys(editorLabels).some(key => !YardEditor.available(key,t[key])) ||
+        t.props.some(id => !YardEditor.available('prop',id));
+      $('#yard-editor-status').textContent = lockedBase ? 'Площадку можно открыть в магазине дворов.' :
+        lockedPack ? 'Выбранные детали доступны в наборах оформления.' : '';
+      $('#save-yard').disabled = lockedBase || lockedPack;
+      $('#share-yard').disabled = lockedBase || lockedPack;
     }
-    Object.keys(draft).forEach(key => {
-      const field = $('#edit-'+key); if (!field) return; field.value = draft[key];
+    Object.keys(editorLabels).forEach(key => {
+      const field = $('#edit-'+key); field.value = draft[key];
       field.onchange = () => { draft[key] = field.value; preview(); };
+    });
+    country.onchange = () => { updateBases(); preview(); };
+    base.onchange = () => { draft.base = base.value; preview(); };
+    $$('.yard-decorations input').forEach(input => input.onchange = () => {
+      draft.props = $$('.yard-decorations input:checked').map(box => box.value);
+      preview();
     });
     $('#save-yard').onclick = () => {
       Save.data.customYard = YardEditor.clean(draft); Save.data.selectedYard = 'custom';
@@ -458,6 +491,8 @@
     };
     $('#open-packs').onclick = () => editorPacks(draft);
     $('#share-yard').onclick = () => shareActivity({...Activities.definition('targets'),yard:draft.base,custom:YardEditor.clean(draft)});
+    updateBases();
+    refreshYardPreview = preview;
     preview();
   }
 
@@ -468,13 +503,14 @@
     $('#back-to-editor').onclick = () => yardEditor(draft);
     $$('#modal-box [data-editor-pack]').forEach(b => b.onclick = () => {
       const id = b.dataset.editorPack, pack = YardEditor.packs[id];
-      if (Save.data.editorPacks.includes(id)) { yardEditor({...draft,...pack.items}); return; }
+      const preset = { ...draft, ...pack.items, props: [...draft.props, pack.items.prop] };
+      if (Save.data.editorPacks.includes(id)) { yardEditor(preset); return; }
       modal(`<h3>${pack.title}</h3><p>${Object.entries(pack.items).map(([k,v]) => YardEditor.fields[k][v]).join(' · ')}</p>
         <div class="modal-actions"><button class="btn btn-paper" id="try-pack">Примерить</button><button class="btn btn-primary" id="unlock-pack">Открыть в демо</button></div>`);
-      $('#try-pack').onclick = () => yardEditor({...draft,...pack.items});
+      $('#try-pack').onclick = () => yardEditor(preset);
       $('#unlock-pack').onclick = () => {
         Save.data.editorPacks.push(id); Save.save(); Sound.buy();
-        yardEditor({...draft,...pack.items});
+        yardEditor(preset);
       };
     });
   }
@@ -482,6 +518,7 @@
   /* ---------- магазин ---------- */
   let shopTab = 'yards';
   let yardEra = 'all';
+  let yardCountry = Yards.theme().country || 'Россия';
   let outfitEra = Yards.ballEra();
 
   function paintOutfit(canvas, animate = false) {
@@ -559,10 +596,11 @@
     if (shopTab === 'outfits') { renderOutfits(list); return; }
     if (shopTab === 'yards') {
       Object.values(YARDS).filter(y =>
+        (y.country || 'Россия') === yardCountry &&
         (y.era || y.id === 'classic' || y.id === Save.data.selectedYard) &&
         (yardEra === 'all' || y.era === yardEra)
       ).forEach(y => {
-        const owned = y.free || Save.data.ownedYards.includes(y.id);
+        const owned = ownsYard(y);
         const selected = Save.data.selectedYard === y.id;
         const card = document.createElement('div');
         card.className = 'shop-card';
@@ -572,7 +610,7 @@
             <div class="shop-card-title">${y.name}
               ${y.free ? '<span class="tag tag-free">Бесплатно</span>'
                 : owned ? '<span class="tag tag-owned">Куплено</span>'
-                : '<span class="tag tag-paid">Платный набор</span>'}
+                : y.priceCoins ? '<span class="tag tag-paid">За жетоны</span>' : '<span class="tag tag-paid">Платный набор</span>'}
             </div>
             <div class="shop-card-desc">${y.desc}</div>
             <div class="shop-card-items">В наборе: ${y.items}</div>
@@ -589,10 +627,10 @@
         } else {
           const price = document.createElement('div');
           price.className = 'shop-price';
-          price.textContent = y.priceRub + ' ₽';
+          price.textContent = y.priceCoins ? '🪙 ' + y.priceCoins : y.priceRub + ' ₽';
           const b = document.createElement('button');
           b.className = 'btn btn-primary';
-          b.textContent = 'Купить';
+          b.textContent = y.priceCoins ? 'Открыть' : 'Купить';
           b.onclick = () => buyYardModal(y);
           actions.appendChild(price); actions.appendChild(b);
         }
@@ -647,23 +685,32 @@
 
   function buyYardModal(y) {
     Sound.ui();
+    const price = y.priceCoins ? y.priceCoins + ' жетонов' : y.priceRub + ' ₽';
     modal(`
-      <h3>${y.name} — ${y.priceRub} ₽</h3>
+      <h3>${y.name} — ${price}</h3>
       <p>${y.desc}</p>
       <p><b>В наборе:</b> ${y.items}.</p>
       <p>Двор — чистая косметика: размер площадки, физика мяча и окна тайминга не меняются.</p>
-      <div class="demo-note">⚠ Это демо-версия игры: реальные платежи не подключены. Нажатие «Купить» просто разблокирует двор.</div>
+      ${y.priceCoins ? '<p id="yard-purchase-status" role="status"></p>' :
+        '<div class="demo-note">Демо-покупка. Деньги не списываются.</div>'}
       <div class="modal-actions">
         <button class="btn btn-paper" data-close>Отмена</button>
-        <button class="btn btn-primary" id="confirm-buy">Купить</button>
+        <button class="btn btn-primary" id="confirm-buy">${y.priceCoins ? 'Открыть за жетоны' : 'Открыть в демо'}</button>
       </div>`);
     $('#confirm-buy').onclick = () => {
-      Save.data.ownedYards.push(y.id);
+      if (!ownsYard(y)) {
+        if (y.priceCoins && Save.data.coins < y.priceCoins) {
+          $('#yard-purchase-status').textContent = `Не хватает ${y.priceCoins - Save.data.coins} жетонов.`;
+          return;
+        }
+        Save.data.coins -= y.priceCoins || 0;
+        Save.data.ownedYards.push(y.id);
+      }
       Save.data.selectedYard = y.id;
       Yards.syncBallToYard();
       Sound.buy();
       closeModal();
-      renderShop(); paintBg('#shop-bg');
+      updateCoins(); renderShop(); paintBg('#shop-bg');
       modal(`<h3>Двор твой! 🎉</h3>
         <p>«${y.name}» разблокирован и уже выбран. Можно переходить к матчу.</p>
         <div class="modal-actions"><button class="btn btn-green" data-close>Сыграть</button></div>`,
@@ -697,7 +744,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 17</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 18</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -723,7 +770,14 @@
 
   /* ---------- события ---------- */
   $('#btn-play').onclick = () => { Sound.ui(); nav('modes'); };
-  $('#btn-shop').onclick = () => { Sound.ui(); shopTab = 'yards'; syncTabs(); nav('shop'); };
+  $('#btn-shop').onclick = () => {
+    Sound.ui();
+    shopTab = 'yards';
+    yardCountry = Yards.theme().country || 'Россия';
+    yardEra = 'all';
+    syncTabs();
+    nav('shop');
+  };
   $('#btn-wardrobe').onclick = () => { Sound.ui(); shopTab='outfits'; outfitEra=Yards.ballEra(); syncTabs(); nav('shop'); };
   $('#btn-yards').onclick = () => { Sound.ui(); yardEditor(); };
   $('#btn-daily').onclick = () => activityModal(Activities.daily());
@@ -766,13 +820,29 @@
     Sound.ui(); shopTab = b.dataset.tab; syncTabs(); renderShop();
   });
   $$('.outfit-era-btn').forEach(b => b.onclick = () => { outfitEra=b.dataset.outfitEra; renderShop(); });
-  $$('.yard-era-btn').forEach(b => b.onclick = () => {
+  $$('[data-country]').forEach(b => b.onclick = () => {
+    yardCountry = b.dataset.country;
+    yardEra = 'all';
+    syncTabs();
+    renderShop();
+  });
+  $$('#yard-era-filter [data-era]').forEach(b => b.onclick = () => {
     Sound.ui(); yardEra = b.dataset.era;
-    $$('.yard-era-btn').forEach(x => x.classList.toggle('active', x === b));
+    $$('#yard-era-filter [data-era]').forEach(x => x.classList.toggle('active', x === b));
     renderShop();
   });
   function syncTabs() {
     $$('.shop-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === shopTab));
+    $('#yard-country-filter').classList.toggle('hidden', shopTab !== 'yards');
+    $$('[data-country]').forEach(b => {
+      const selected = b.dataset.country === yardCountry;
+      b.classList.toggle('active', selected);
+      b.setAttribute('aria-pressed', selected);
+    });
+    $$('#yard-era-filter [data-era]').forEach(b => {
+      b.hidden = b.dataset.era !== 'all' && !Object.values(YARDS).some(y => y.country === yardCountry && y.era === b.dataset.era);
+      b.classList.toggle('active', b.dataset.era === yardEra);
+    });
     $('#yard-era-filter').classList.toggle('hidden', shopTab !== 'yards');
     $('#outfit-era-filter').classList.toggle('hidden', shopTab !== 'outfits');
   }
@@ -785,15 +855,18 @@
   window.addEventListener('art-ready', () => {
     artRevision++;
     if (current !== 'match') nav(current);
+    refreshYardPreview?.();
   });
   window.addEventListener('wardrobe-ready', () => {
     $$('#shop-list canvas[data-outfit]').forEach(c => paintOutfit(c));
+    refreshYardPreview?.();
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && current === 'match' && !paused) pauseModal();
   });
   Yards.syncBallToYard();
+  syncTabs();
   nav('home');
   const params = new URLSearchParams(location.search);
   const invitation = Activities.fromLink(params);
