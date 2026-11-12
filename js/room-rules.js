@@ -9,6 +9,11 @@ const RoomField = (() => {
     const bottom = quad[3].x + (quad[2].x-quad[3].x)*u;
     return {x:top+(bottom-top)*v,y:H*(.53+(.88-.53)*v)};
   });
-  return { W, H, goal, ball, quad, places, maxDrag:H*.5, shot:{ window:.21, spread:.26 } };
+  function teamName(value) {
+    if (typeof value !== 'string') return '';
+    const clean = value.normalize('NFKC').replace(/[^\p{L}\p{M}\p{N}\s-]/gu,'').replace(/\s+/g,' ').trim();
+    return Array.from(clean).slice(0,24).join('').trim();
+  }
+  return { W, H, goal, ball, quad, places, maxDrag:H*.5, shot:{ window:.21, spread:.26 }, teamName };
 })();
 if (typeof module !== 'undefined') module.exports = RoomField;

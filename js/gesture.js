@@ -10,6 +10,7 @@ class Gesture {
     this.onStart = null; // (p) => {}
     this.onMove = null;  // (drag) => {}
     this.onEnd = null;   // (drag|null) => {}  null = отмена/короткий тап
+    this.onTap = null;
     this._down = this._down.bind(this);
     this._move = this._move.bind(this);
     this._up = this._up.bind(this);
@@ -47,8 +48,12 @@ class Gesture {
     this.active = false;
     this.cur = this._pos(e);
     const d = this.drag();
-    // короткий тап = отмена прицеливания (по ГДД)
     this.onEnd && this.onEnd(d.len < 18 ? null : d);
+    if (d.len < 18 && d.dur < 420 && this.onTap) {
+      const rect = this.canvas.getBoundingClientRect();
+      const scale = (this.canvas.logicalWidth || this.canvas.width) / rect.width;
+      this.onTap(this.cur, 24 * scale);
+    }
     this.start = null; this.cur = null;
     this.pointerId = null;
   }
@@ -79,6 +84,19 @@ const U = {
   clamp: (v, a, b) => Math.min(b, Math.max(a, v)),
   lerp: (a, b, t) => a + (b - a) * t,
   easeOut: t => 1 - (1 - t) * (1 - t),
+  tapPlayer(tap, radius, candidates, position, height) {
+    let nearest = -1, distance = radius;
+    for (const id of candidates) {
+      const feet = position(id);
+      const y = U.clamp(tap.y, feet.y - height(id), feet.y);
+      const d = Math.hypot(tap.x - feet.x, tap.y - y);
+      if (d < distance) { nearest = id; distance = d; }
+    }
+    return nearest;
+  },
+  aimedPass(from, to, len) {
+    return { angle: Math.atan2(to.y - from.y, to.x - from.x), len };
+  },
   angDiff(a, b) {
     let d = a - b;
     while (d > Math.PI) d -= 2 * Math.PI;

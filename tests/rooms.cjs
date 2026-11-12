@@ -71,3 +71,27 @@ test('four clients join the same Square, pass the turn and see the timeout penal
   assert.equal(room.scores[1],1);
   assert.equal(room.last.label,'Два отскока · штраф');
 });
+
+test('named teams play a cup with equal attempts per set and two set wins end the match', async t => {
+  const {request,go} = await setup(t);
+  const a = (await request('',{mode:'am300',cup:true,team:'  Соседи  ' })).data;
+  const path = '/'+a.room.code;
+  const b = (await request(path+'/join',{team:'Équipe da Rua!'})).data;
+  let room = b.room;
+  assert.deepEqual(room.teams,['Соседи','Équipe da Rua']);
+  const delta = field.ball.y-field.goal.y+field.goal.h;
+  const dy = -delta/(delta+40)*field.maxDrag;
+  for (let i = 0; i < 12; i++) {
+    const seat = room.turn;
+    go(room.turnReadyAt+1);
+    const shot = seat ? {dx:750,dy:-120} : {dx:0,dy};
+    room = (await request(path+'/play',{version:room.version,phase:0,...shot},seat ? b.token : a.token)).data;
+    if (i === 4) assert.equal(room.cup.set,1);
+    if (i === 5) assert.equal(room.cup.set,2);
+  }
+  assert.deepEqual(room.attempts,[6,6]);
+  assert.deepEqual(room.cup.history,[[300,0],[300,0]]);
+  assert.deepEqual(room.cup.wins,[2,0]);
+  assert.equal(room.phase,'done');
+  assert.equal(room.winner,0);
+});

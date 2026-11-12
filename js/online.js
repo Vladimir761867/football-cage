@@ -1,9 +1,10 @@
 /* Дружеские комнаты с сервером, общим счётом и очередностью ходов. */
 const OnlineRooms = {
   origin(value) {
-    const input = (value || '').trim() || location.origin;
+    const input = (value || '').trim() || document.querySelector('meta[name="football-rooms-origin"]')?.content;
+    if (!input && location.hostname.endsWith('.github.io')) throw new Error('Для игры по этой ссылке нужен адрес сервера комнат. Вставь адрес или открой приглашение.');
     let url;
-    try { url = new URL(input); } catch { throw new Error('Укажи полный адрес сервера, например https://example.com'); }
+    try { url = new URL(input || location.origin); } catch { throw new Error('Укажи полный адрес сервера, например https://example.com'); }
     if (url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
         (url.protocol !== 'https:' && !(url.protocol === 'http:' && url.origin === location.origin))) {
       throw new Error('Укажи адрес HTTPS без пути. Для локального сервера оставь поле пустым.');
@@ -46,10 +47,21 @@ const OnlineRooms = {
         ![room.last.from.x,room.last.from.y,room.last.to.x,room.last.to.y,room.last.arc,room.last.time].every(Number.isFinite))) {
       throw new Error('Сервер прислал неверный ход');
     }
+    if (room.teams != null && (!Array.isArray(room.teams) || room.teams.length !== count ||
+        room.teams.some(team => typeof team !== 'string' || team !== RoomField.teamName(team)))) {
+      throw new Error('Сервер прислал неверные названия команд');
+    }
+    const cup = room.cup;
+    const scorePair = pair => Array.isArray(pair) && pair.length === 2 && pair.every(n => Number.isInteger(n) && n >= 0);
+    if (cup != null && (room.mode !== 'am300' || ![1,2,3].includes(cup.set) ||
+        !scorePair(cup.points) || !scorePair(cup.wins) || !Array.isArray(cup.history) ||
+        cup.history.length > 3 || !cup.history.every(scorePair))) {
+      throw new Error('Сервер прислал неверный счёт кубка');
+    }
     return room;
   },
   memoryKey(origin,code) { return 'football-room:' + origin + ':' + code; },
-  async enter(origin,mode,code) {
+  async enter(origin,mode,code,{team='',cup=false} = {}) {
     if (code) {
       let previous;
       try { previous = JSON.parse(sessionStorage.getItem(this.memoryKey(origin,code))); } catch { /* storage unavailable */ }
@@ -61,8 +73,8 @@ const OnlineRooms = {
       }
     }
     const outfit = Wardrobe.selected('90').id;
-    const data = code ? await this.request(origin,'/'+code+'/join',{body:{outfit}})
-      : await this.request(origin,'',{body:{mode,outfit}});
+    const data = code ? await this.request(origin,'/'+code+'/join',{body:{outfit,team}})
+      : await this.request(origin,'',{body:{mode,outfit,team,cup}});
     this.check(data.room);
     if (!/^[a-f0-9]{48}$/.test(data.token) || !Number.isInteger(data.seat) || !data.room.seats[data.seat]) {
       throw new Error('Сервер не подтвердил место в комнате');
@@ -101,7 +113,16 @@ class OnlineMode {
       if (!d || !this.myTurn() || this.pending) return;
       this.send('/play',{version:this.room.version,dx:d.dx,dy:d.dy,phase:Math.min(120,(performance.now()-this.startedAt)/1000)});
     };
+    if (this.room.mode === 'square') env.gesture.onTap = (point,radius) => {
+      if (!this.myTurn() || this.pending) return;
+      const targets = this.room.seats.map((occupied,i) => occupied && i !== this.seat && this.room.scores[i] < 10 ? i : -1).filter(i => i >= 0);
+      const id = U.tapPlayer(point,radius,targets,i => RoomField.places[i],66);
+      if (id < 0) return;
+      const pass = U.aimedPass(RoomField.places[this.seat],RoomField.places[id],RoomField.W*.24);
+      this.send('/play',{version:this.room.version,dx:Math.cos(pass.angle)*pass.len,dy:Math.sin(pass.angle)*pass.len,phase:0});
+    };
   }
+  team(i) { return this.room.teams?.[i] || (i === this.seat ? 'Ты' : `Игрок ${i+1}`); }
   time() { return Date.now() + this.offset; }
   myTurn() {
     return this.room.phase === 'playing' && this.room.turn === this.seat &&
@@ -121,11 +142,17 @@ class OnlineMode {
       hud.setTimer('Ждём');
       hud.setPills([]);
     } else if (room.phase === 'playing' || room.phase === 'done') {
-      const value = i => room.mode === 'square' ? room.scores[i] + '/10' : room.scores[i];
+      const score = room.cup?.points || room.scores;
+      const value = i => room.mode === 'square' ? score[i] + '/10' : score[i];
       if (!this.pillsSet) {
-        hud.setPills(room.scores.map((_,i) => ({id:'room'+i,lbl:i===this.seat ? 'Ты' : 'Игрок '+(i+1),val:value(i)})));
+        const pills = score.map((_,i) => ({id:'room'+i,lbl:this.team(i),val:value(i)}));
+        if (room.cup) pills.push({id:'sets',lbl:'Сеты',val:room.cup.wins.join(':')});
+        hud.setPills(pills);
         this.pillsSet = true;
-      } else room.scores.forEach((_,i) => hud.setPill('room'+i,value(i)));
+      } else {
+        score.forEach((_,i) => hud.setPill('room'+i,value(i)));
+        if (room.cup) hud.setPill('sets',room.cup.wins.join(':'));
+      }
       if (room.last && before?.last?.time !== room.last.time) {
         this.animate = { ...room.last, start:performance.now() };
         hud.toast(room.last.label);
@@ -152,8 +179,12 @@ class OnlineMode {
   update(dt) {
     if (this.endAt && performance.now() >= this.endAt) {
       const won = this.room.winner === this.seat;
-      this.env.finish({aborted:this.room.phase === 'cancelled', title:this.room.phase === 'cancelled' ? 'Комната закрыта' : won ? 'Победа!' : 'Матч окончен',
-        score:this.room.scores.join(' : '), sub:this.room.mode === 'square' ? 'Штрафы по порядку игроков' : 'Очки по порядку игроков', coins:0});
+      const cup = this.room.cup;
+      this.env.finish({aborted:this.room.phase === 'cancelled', title:this.room.phase === 'cancelled' ? 'Комната закрыта' :
+        won ? 'Победа!' : cup && this.room.winner === null ? 'Ничья' : 'Матч окончен',
+        score:(cup?.wins || this.room.scores).join(' : '),
+        sub:cup ? 'Счёт по сетам · '+cup.history.map(points => points.join(':')).join(' · ') :
+          this.room.mode === 'square' ? 'Штрафы по порядку игроков' : 'Очки по порядку игроков', coins:0});
       return;
     }
     this.pollIn -= dt;
@@ -163,9 +194,11 @@ class OnlineMode {
       this.env.hud.setTimer(Math.max(0,Math.ceil((this.room.deadline-this.time())/1000)));
       if (this.lastTurn !== turn || this.lastVersion !== this.room.version) {
         this.lastTurn = turn; this.lastVersion = this.room.version;
-        this.env.hud.hint(turn === this.seat
-          ? this.room.mode === 'square' ? 'Твой мяч. Свайп к сопернику до двух отскоков.' : 'Твой удар. Свайп вверх к цели.'
-          : `Ход игрока ${turn+1}`);
+        const prefix = this.room.cup ? `Сет ${this.room.cup.set}/3 · ` : '';
+        const hint = turn === this.seat
+          ? this.room.mode === 'square' ? 'Твой мяч. Тап или свайп к сопернику.' : 'Твой удар. Свайп вверх к цели.'
+          : `Ход: ${this.team(turn)}`;
+        this.env.hud.hint(prefix+hint);
       }
     }
   }

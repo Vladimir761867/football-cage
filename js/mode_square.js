@@ -50,7 +50,8 @@ class SquareMode {
       { id: 'p4', lbl: 'Игрок 4', val: '0/10' }
     ]);
     env.hud.setTimer(this.timeLeft);
-    env.hud.hint(env.tutorial ? 'Ты в нижней левой четверти. Проведи коротко к одному из игроков.' : 'Твоя четверть — нижняя левая. Отбей до второго отскока');
+    env.hud.hint(env.tutorial ? 'Ты внизу слева. Коснись соперника или свайпни в его сторону.' :
+      'Отбей до второго отскока. Тап по сопернику или свайп.');
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
@@ -67,6 +68,11 @@ class SquareMode {
       const drag = this.aimDrag; this.aimDrag = null;
       if (this.state !== 'aim' || this.holder !== 0 || !drag || !d || d.len < 18) return;
       this._hit(d);
+    };
+    env.gesture.onTap = (point, radius) => {
+      if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
+      const target = U.tapPlayer(point,radius,this._targets(),i => this._pos(i),i => 84*this._scale(i));
+      if (target >= 0) this._hit(U.aimedPass(this._pos(0),this._pos(target),Math.min(W,H)*.24));
     };
   }
 
@@ -173,14 +179,15 @@ class SquareMode {
     if (this.holder === 0 || this.state !== 'aim') return;
     const targets = this._targets();
     if (!targets.length) { this._finish(true); return; }
-    const target = this.stage === 2 && targets.includes(0) && this.random() < .55
+    const pressure = this.stage === 2 ? Math.max(.55,this.cfg.pressure) : this.cfg.pressure;
+    const target = targets.includes(0) && this.random() < pressure
       ? 0 : targets[Math.floor(this.random() * targets.length)];
     const from = this._pos(this.holder), to = this._pos(target);
     const style = this.holder;
     const receiveDifficulty = this.incoming < 1 ? .13 : 0;
     const accurate = this.random() < this.cfg.botAcc - receiveDifficulty - (style === 2 ? .05 : 0);
     const angle = Math.atan2(to.y - from.y, to.x - from.x) + (accurate ? 0 : (this.random() - .5) * .85);
-    const strength = style === 2 || (style === 3 && this.stage >= 1) ? .34 : .25;
+    const strength = this.random() < this.cfg.deep || (style === 3 && this.stage >= 1) ? .34 : .25;
     this._hit({ angle, len: Math.min(this.env.W, this.env.H) * (accurate ? strength : .06) });
   }
 

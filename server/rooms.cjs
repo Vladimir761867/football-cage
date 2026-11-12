@@ -24,7 +24,7 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
     code:room.code, mode:room.mode, phase:room.phase, seats:room.players.map(Boolean),
     capacity:room.capacity, version:room.version, turn:room.turn, scores:room.scores,
     attempts:room.attempts, turnReadyAt:room.turnReadyAt, deadline:room.deadline, serverNow:now(),
-    last:room.last, winner:room.winner, outfits:room.outfits
+    last:room.last, winner:room.winner, outfits:room.outfits, teams:room.teams, cup:room.cup
   });
   const turnDelay = room => room.mode === 'square' ? 5600 : 16000;
 
@@ -49,6 +49,28 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
     room.scores[seat] += points;
     room.attempts[seat]++;
     room.last = {seat, from, to, label, time, arc:drag ? 70 : 0};
+    if (room.cup) {
+      const cup = room.cup;
+      cup.points[seat] += points;
+      const endOfSet = room.attempts.every(n => n === cup.set * 3);
+      if (endOfSet) {
+        const [a,b] = cup.points;
+        if (a !== b) cup.wins[a > b ? 0 : 1]++;
+        cup.history.push([...cup.points]);
+        const [wonA,wonB] = cup.wins;
+        if (Math.max(wonA,wonB) === 2 || cup.set === 3) {
+          finish(room,wonA === wonB ? null : wonA > wonB ? 0 : 1);
+          return;
+        }
+        cup.set++;
+        cup.points.fill(0);
+        room.last.label += ' · Сет завершён';
+        schedule(room,1-seat,time,1500);
+        return;
+      }
+      schedule(room,1-seat,time);
+      return;
+    }
     const [a,b] = room.scores;
     if (room.attempts[0] === room.attempts[1] && Math.max(a,b) >= 300 && a !== b) {
       finish(room, a > b ? 0 : 1);
@@ -104,12 +126,13 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
     if (!token || seat < 0) throw error(401,'Войди в комнату заново');
     return seat;
   }
-  function addPlayer(room, outfit) {
+  function addPlayer(room, outfit, team) {
     const seat = room.players.indexOf(null);
     if (seat < 0 || room.phase !== 'lobby') throw error(409,'Комната заполнена или матч уже начался');
     const token = randomBytes(24).toString('hex');
     room.players[seat] = token;
     room.outfits[seat] = wardrobe.roomOutfit(outfit);
+    room.teams[seat] = field.teamName(team);
     room.version++;
     if (room.players.every(Boolean)) {
       room.phase = 'playing';
@@ -165,7 +188,7 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
       prune(time); limit(req,time);
       if (pathname === '/api/health' && req.method === 'GET') { send(200,{version:1}); return; }
       if (pathname === '/api/rooms' && req.method === 'POST') {
-        const {mode,outfit} = await read(req);
+        const {mode,outfit,team,cup} = await read(req);
         if (!['square','am300'].includes(mode)) throw error(400,'Выбери режим комнаты');
         if (rooms.size >= 500) throw error(503,'Все комнаты заняты');
         let code;
@@ -173,19 +196,27 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
         const capacity = mode === 'am300' ? 2 : 4;
         const room = { code, mode, capacity, phase:'lobby', players:Array(capacity).fill(null),
           scores:Array(capacity).fill(0), attempts:Array(capacity).fill(0), outfits:Array(capacity).fill('90-street'),
+          teams:Array(capacity).fill(''), cup:mode === 'am300' && cup === true ?
+            {set:1,points:[0,0],wins:[0,0],history:[]} : null,
           version:0, touched:time, turn:0, turnReadyAt:0, deadline:0, last:null, winner:null };
         rooms.set(code,room);
-        send(201,addPlayer(room,outfit)); return;
+        send(201,addPlayer(room,outfit,team)); return;
       }
       const [, , , code, action] = pathname.split('/');
       const room = codes.test(code || '') && rooms.get(code);
       if (!room || !/^\/api\/rooms\/[A-F0-9]{6}(\/(join|play|leave))?$/.test(pathname)) throw error(404,'Комната не найдена');
-      if (action === 'join' && req.method === 'POST') { const data=await read(req); room.touched = time; send(200,addPlayer(room,data.outfit)); return; }
+      if (action === 'join' && req.method === 'POST') {
+        const data = await read(req);
+        room.touched = time;
+        send(200,addPlayer(room,data.outfit,data.team));
+        return;
+      }
       const seat = membership(req,room);
       room.touched = time;
       if (!action && req.method === 'GET') { advanceClock(room,time); send(200,snapshot(room)); return; }
       if (action === 'leave' && req.method === 'POST') {
         room.players[seat] = null;
+        room.teams[seat] = '';
         if (room.phase === 'playing' || (room.phase === 'lobby' && seat === 0)) room.phase = 'cancelled';
         room.version++;
         if (!room.players.some(Boolean)) rooms.delete(code);

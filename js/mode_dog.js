@@ -36,12 +36,13 @@ class DogMode {
 
     env.hud.setPills([
       { id: 'score', lbl: 'Очки', val: 0 },
-      { id: 'passes', lbl: 'Передачи', val: 0 },
+      { id: 'passes', lbl: 'Команда', val: 0 },
       { id: 'losses', lbl: 'Потери', val: '0/10' },
       { id: 'pace', lbl: 'Темп', val: '1/5' }
     ]);
     env.hud.setTimer(this.timeLeft);
-    env.hud.hint(env.tutorial ? 'Проведи коротко к партнёру сбоку. Для первого паса водящий подождёт.' : `${this.cfg.passers} против ${this.cfg.dogs}. Короткий свайп к партнёру. Каждые 8 пасов темп растёт`);
+    env.hud.hint(env.tutorial ? 'Коснись партнёра сбоку или сделай короткий свайп к нему.' :
+      `${this.cfg.passers}×${this.cfg.dogs} · Тап по партнёру или короткий свайп`);
 
     env.gesture.onStart = p => {
       if (this.youDog || this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
@@ -64,6 +65,16 @@ class DogMode {
       }
       if (this.state !== 'aim' || this.holder !== 0 || !drag || !d || d.len < 18) return;
       this._pass(d);
+    };
+    env.gesture.onTap = (point, radius) => {
+      if (this.youDog) {
+        const q = this._quad();
+        this.dogs[0].manual = { x: U.clamp(point.x,W*.11,W*.89), y: U.clamp(point.y,q[0].y,q[3].y) };
+        return;
+      }
+      if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
+      const target = U.tapPlayer(point,radius,this._receivers(),i => this.passers[i],i => 84*this._scaleAt(this.passers[i].v));
+      if (target >= 0) this._pass(U.aimedPass(this.passers[0],this.passers[target],Math.min(W,H)*.24));
     };
   }
 
@@ -112,7 +123,7 @@ class DogMode {
     const p = U.clamp(drag.len / (Math.min(this.env.W, this.env.H) * .38), 0, 1.2);
     const from = this.passers[this.holder], target = this.passers[best];
     const badPower = p < .28 || p > 1.02;
-    const out = diff > .58 || badPower;
+    const out = diff > this.cfg.angle || badPower;
     let outcome = 'ok';
     if (out) outcome = 'out';
     const mid = { x: (from.x + target.x) / 2, y: (from.y + target.y) / 2 };
@@ -130,8 +141,10 @@ class DogMode {
   _penalize(i, reason) {
     if (i < 0 || !this.active[i]) return;
     this.errors[i]++;
-    if (i === 0) this.env.collect?.('loss');
-    this.env.progress?.('loss');
+    if (i === 0) {
+      this.env.collect?.('loss');
+      this.env.progress?.('loss');
+    }
     this.streak = 0;
     this.env.hud.setPill('losses', `${this.errors[0]}/10`);
     this.env.hud.toast(`${reason} • ${i === 0 ? 'твоя потеря' : `ошибка ${this.errors[i]}/10`}`, 'bad');
@@ -160,9 +173,10 @@ class DogMode {
 
   _changeRole() {
     this.env.collect?.('loss');
+    this.env.progress?.('loss');
     this.youDog = true;
     this.dogs[0].manual = null;
-    this.env.hud.hint('Ты водишь. Свайпни в сторону передачи, чтобы перехватить мяч.');
+    this.env.hud.hint('Ты водишь. Коснись точки перехвата или свайпни к ней.');
     this._nextHolder();
   }
 
@@ -172,24 +186,25 @@ class DogMode {
     if (!f) return;
     if (f.outcome === 'ok') {
       this.passes++; this.streak++;
-      if (this.holder === 0 && !this.youDog) this.env.collect?.('pass');
-      this.env.progress?.('pass');
+      const personal = this.holder === 0 && !this.youDog;
+      if (personal) {
+        this.env.collect?.('pass');
+        this.env.progress?.('pass');
+      }
       if (this.env.tutorial && this.holder === 0) { this.env.learned?.(); return; }
       const fast = this.fast && this.holder === 0;
       const pts = fast ? 3 : 1;
-      this.score += pts;
-      const prev = this.holder;
+      if (personal) this.score += pts;
       this._giveBall(f.target);
       this.passers[f.target].react = .5; // принял мяч
       this.env.hud.setPill('score', this.score);
       this.env.hud.setPill('passes', this.passes);
       if (fast) this.env.hud.toast('Быстро! +3', 'gold');
       else if (this.streak > 0 && this.streak % 5 === 0) { this.env.hud.toast(`Серия ${this.streak}!`, 'good'); Sound.goal(); }
-      void prev;
     } else {
       if (this.env.tutorial) {
         this._giveBall(0);
-        this.env.hud.hint('Попробуй короткий свайп точно к боковому партнёру.');
+        this.env.hud.hint('Коснись бокового партнёра. Проверь, свободна ли линия паса.');
         return;
       }
       if (f.catcher === this.dogs[0] && this.youDog) {

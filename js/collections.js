@@ -12,7 +12,7 @@ const Collections = (() => {
     pass: { name: 'Свой в круге', icon: '↗', detail: 'Отдай пять своих точных пасов без собственной потери в «Собачке».' },
     square: { name: 'Хозяин четверти', icon: '▦', detail: 'Сделай пять точных отбиваний за один «Квадрат».' },
     frame: { name: 'Мастер рамы', icon: '◎', detail: 'За одну «Американку» попади в штангу, перекладину и девятку.' },
-    keeper: { name: 'На замке', icon: '🧤', detail: 'Сделай два сейва за один «Навес».' },
+    keeper: { name: 'Обошёл вратаря', icon: '🧤', detail: 'Забей дважды за серию «Против вратаря».' },
     cup: { name: 'Кубок двора', icon: '🏆', detail: 'Выиграй все этапы одного кубка.' }
   };
   const effects = {
@@ -64,21 +64,21 @@ const Collections = (() => {
   }
 
   function match() {
-    let passes = 0, bestPasses = 0, returns = 0, saves = 0, goal = false;
+    let passes = 0, bestPasses = 0, returns = 0, keeperGoals = 0, goal = false;
     const frame = new Set();
     return {
       note(event) {
         if (event === 'pass') bestPasses = Math.max(bestPasses, ++passes);
         if (event === 'loss') passes = 0;
         if (event === 'return') returns++;
-        if (event === 'save') saves++;
+        if (event === 'keeperGoal') keeperGoals++;
         if (event === 'goal') goal = true;
         if (['bar','post','corner'].includes(event)) frame.add(event);
       },
       finish(yard, cupWon, date) {
         const earned = [
           goal && 'goal', bestPasses >= 5 && 'pass', returns >= 5 && 'square',
-          frame.size === 3 && 'frame', saves >= 2 && 'keeper', cupWon && 'cup'
+          frame.size === 3 && 'frame', keeperGoals >= 2 && 'keeper', cupWon && 'cup'
         ].filter(Boolean);
         if (!earned.length) return { badges: [], photo: false };
         const collection = Save.data.collection;

@@ -12,8 +12,11 @@ const Save = (() => {
     ballsByEra: {},
     ownedOutfits: [],
     outfitsByEra: {},
+    outfitsByCountry: {},
     collection: { shoes: [], equippedShoes: {}, effects: [], effect: 'net', badges: [], photos: {} },
     difficulty: 'normal',
+    practiceDifficulty: null,
+    playedModes: {},
     cup: null,
     cupsWon: { square: 0, am300: 0 },
     activities: {},
@@ -37,6 +40,8 @@ const Save = (() => {
       data.playStats = Object.assign(def().playStats, parsed.playStats || {});
       data.ownedOutfits = Array.isArray(parsed.ownedOutfits) ? parsed.ownedOutfits.filter(x => typeof x === 'string') : [];
       data.outfitsByEra = parsed.outfitsByEra && typeof parsed.outfitsByEra === 'object' && !Array.isArray(parsed.outfitsByEra) ? parsed.outfitsByEra : {};
+      data.outfitsByCountry = Object.assign({},parsed.outfitsByCountry || {});
+      data.playedModes = Object.assign({},parsed.playedModes || {});
       const collection = def().collection;
       for (const key of ['shoes', 'effects', 'badges']) {
         const values = parsed.collection?.[key];

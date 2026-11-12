@@ -24,6 +24,82 @@ function env() {
     hud: new Proxy({}, { get: () => () => {} }), finish() {} };
 }
 
+test('bots increase team tempo without contributing to the player passing challenge', () => {
+  const { Activities, DogMode } = runtime();
+  const challenge = Activities.definition('dog','2026-11-12');
+  const tracker = Activities.tracker(challenge);
+  const mode = new DogMode({...env(),challenge,progress:event => tracker.push(event)});
+  for (let i = 0; i < 8; i++) {
+    mode._giveBall(1);
+    mode.fly = {target:2,outcome:'ok'};
+    mode._resolve();
+  }
+  assert.equal(mode.passes,8);
+  assert.equal(mode.paceLevel,2);
+  assert.equal(mode.score,0);
+  assert.equal(tracker.score,0);
+  mode._giveBall(0);
+  mode.fly = {target:1,outcome:'ok'};
+  mode._resolve();
+  assert.equal(tracker.score,1);
+});
+
+test('after an untouched cross the player stays the striker and the next cross comes from the bots', () => {
+  const { CrossMode } = runtime();
+  const mode = new CrossMode({...env(),attackOnly:true});
+  mode.update(.8);
+  assert.notEqual(mode.combo.holder,0);
+  mode.update(1.4);
+  mode.update(.43);
+  assert.equal(mode.state,'serve');
+  mode.update(mode.flight.dur);
+  mode.update(mode.shot.dur);
+  assert.equal(mode.shooterIndex,0);
+  assert.notEqual(mode.keeperIndex,0);
+  mode.update(.7);
+  assert.equal(mode.serveN,2);
+  assert.notEqual(mode.combo.holder,0);
+});
+
+test('the same placed shot beats the beginner keeper and is saved on expert', () => {
+  const { Am300Mode } = runtime();
+  function shot(difficulty) {
+    const mode = new Am300Mode({...env(),difficulty,opponentCount:0,practice:'keeper'});
+    const g = mode.goal;
+    mode.state = 'fly';
+    mode.fly = {from:{...mode.ballPos},to:{x:g.x+g.w*.71,y:g.y-g.h*.35},t:0,dur:.55};
+    for (let i = 0; i < 56; i++) mode.update(.01);
+    assert.equal(mode.ballsLeft,9);
+    return [mode.you,mode.saves];
+  }
+  assert.deepEqual(shot('beginner'),[1,0]);
+  assert.deepEqual(shot('expert'),[0,1]);
+});
+
+test('new countries have a free and a paid court, aligned targets and independent outfits', () => {
+  const { Save, Yards, YARDS, Wardrobe, Am300Mode, CrossMode } = runtime(new Map(),true);
+  for (const country of ['Бразилия','Китай','Индия']) {
+    const courts = Object.values(YARDS).filter(y => y.country === country);
+    assert.equal(courts.length,2);
+    assert.equal(courts.filter(y => y.free).length,1);
+    for (const court of courts) {
+      Save.data.selectedYard = court.id;
+      Save.data.yardSeason = 'winter';
+      assert.equal(Yards.theme().photo.file,court.photo.file);
+      assert.notEqual(Yards.theme().season,'winter');
+      const american = new Am300Mode(env()).goal;
+      const cross = new CrossMode(env()).goal;
+      assert.deepEqual(american,cross);
+      assert.ok(american.x > 0 && american.x+american.w < 520);
+    }
+    const kit = Wardrobe.list('90',country).find(item => item.price > 0);
+    assert.equal(Wardrobe.buy(kit.id),true);
+    assert.equal(Wardrobe.selected('20',country).id,kit.id);
+    assert.equal(Wardrobe.selected('90').id,'90-street');
+  }
+  assert.equal(Save.data.coins,0);
+});
+
 function crossWithPlayerInGoal(difficulty = 'normal') {
   const { CrossMode } = runtime();
   const clips = [];
@@ -199,10 +275,24 @@ test('court paint changes with background brightness and uses equal line widths'
   assert.equal(colors[4],'#fff3d4'); assert.equal(colors[12],'#243444');
 });
 test('American impact delay advances only with simulation time, including on pause', () => {
-  const { Am300Mode }=runtime(); const mode=new Am300Mode(env());
+  const { Am300Mode }=runtime(); const mode=new Am300Mode({...env(),opponentCount:0,practice:'solo'});
   mode.fly={to:{x:-100,y:-100},golden:false}; mode._impact();
   assert.equal(mode.state,'impact'); mode.update(0); assert.equal(mode.impactDelay,.65);
   mode.update(.7); assert.equal(mode.state,'aim');
+});
+test('regular American matches give each opponent one reply before returning to the player', () => {
+  const { Am300Mode } = runtime();
+  const mode = new Am300Mode(env());
+  mode.fly = {to:{x:-100,y:-100},golden:false};
+  mode._impact();
+  mode.update(.65);
+  assert.equal(mode.state,'bot');
+  assert.equal(mode.ballsLeft,4);
+  const replies = mode.botQueue.length + Number(Boolean(mode.botFly));
+  assert.equal(replies,3);
+  for (let i = 0; i < 400 && mode.state === 'bot'; i++) mode.update(.02);
+  assert.equal(mode.state,'aim');
+  assert.equal(mode.ballsLeft,4);
 });
 test('all 15 photographed goal mouths stay visible and both goal modes share their geometry', () => {
   const { YARDS, Yards, Save, Am300Mode, CrossMode }=runtime();

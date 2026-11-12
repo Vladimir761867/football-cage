@@ -5,11 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1b1f27">
 <title>Дворовый футбол</title>
-<meta name="description" content="Дворовый футбол — мобильная игра: Квадрат, Американка 300 и Навес. Косметика не влияет на игру.">
+<meta name="description" content="Дворовый футбол на телефоне. Собачка, Квадрат, Американка, Навес и тренировка ударов.">
+<meta name="football-rooms-origin" content="">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261112-20">
+<link rel="stylesheet" href="css/style.css?v=20261112-21">
 </head>
 <body>
 <div id="app">
@@ -26,7 +27,10 @@
       <div class="home-yard-label" id="home-yard-label">Классический двор</div>
       <div class="home-actions">
         <button class="btn btn-primary btn-big" id="btn-play">▶ Играть</button>
-        <button class="btn btn-green daily-button" id="btn-daily"><span>Вызов дня</span><small id="home-daily-label"></small></button>
+        <div class="home-row">
+          <button class="btn btn-green daily-button" id="btn-daily"><span>Вызов дня</span><small id="home-daily-label"></small></button>
+          <button class="btn btn-paper" id="btn-training-home">Тренировка</button>
+        </div>
         <div class="home-row">
           <button class="btn btn-paper" id="btn-shop">🛒 Магазин</button>
           <button class="btn btn-paper" id="btn-yards">🏠 Мой двор</button>
@@ -59,22 +63,6 @@
         <button class="difficulty-btn" data-difficulty="expert" aria-label="Уровень 5: Легенда">5</button>
       </div>
       <p class="difficulty-detail" id="difficulty-detail"></p>
-      <div class="cup-panel">
-        <strong>🏆 Кубки двора</strong><span>3 этапа · против ботов · прогресс сохраняется</span>
-        <div class="cup-actions">
-          <button class="btn btn-paper" data-cup="square">Кубок квадрата</button>
-          <button class="btn btn-paper" data-cup="am300">Кубок американки</button>
-        </div>
-        <button class="btn btn-green hidden" id="continue-cup"></button>
-        <span id="cup-medals"></span>
-      </div>
-      <div class="opponents-picker">
-        <span>Американка: соперники</span>
-        <button class="opponents-btn active" data-opponents="1">1</button>
-        <button class="opponents-btn" data-opponents="2">2</button>
-        <button class="opponents-btn" data-opponents="3">3</button>
-        <button class="opponents-btn" data-opponents="0">Тренировка</button>
-      </div>
       <div class="mode-cards">
         <button class="mode-card" data-mode="dog">
           <div class="mode-card-name">Собачка</div>
@@ -93,14 +81,24 @@
         </button>
         <button class="mode-card" data-mode="cross">
           <div class="mode-card-name">Навес</div>
-          <div class="mode-card-desc">Разыграй навес и забей. Промах — в ворота.</div>
+          <div class="mode-card-desc">Партнёры подают. Твой ход — удар по воротам.</div>
           <div class="mode-card-best" id="best-cross"></div>
         </button>
       </div>
+      <button class="btn btn-green" id="btn-training">Тренировка</button>
       <div class="mode-extras">
         <button class="btn btn-paper" id="btn-activities">Испытания</button>
         <button class="btn btn-paper" id="btn-fast-duel">Быстрая дуэль</button>
         <button class="btn btn-paper" id="btn-dog-roles">Смена водящего</button>
+      </div>
+      <div class="cup-panel">
+        <strong>🏆 Кубки двора</strong><span>3 этапа · против ботов · прогресс сохраняется</span>
+        <div class="cup-actions">
+          <button class="btn btn-paper" data-cup="square">Кубок квадрата</button>
+          <button class="btn btn-paper" data-cup="am300">Кубок американки</button>
+        </div>
+        <button class="btn btn-green hidden" id="continue-cup"></button>
+        <span id="cup-medals"></span>
       </div>
     </div>
   </section>
@@ -115,8 +113,8 @@
         <div class="hud-timer" id="match-timer"></div>
       </div>
       <div class="hud-score-row" id="match-score-row"></div>
+      <div class="match-hint" id="match-hint"></div>
     </div>
-    <div class="match-hint" id="match-hint"></div>
     <div class="match-choices hidden" id="match-choices"></div>
     <button class="btn btn-paper lesson-skip hidden" id="btn-skip-lesson">Пропустить обучение</button>
     <div class="match-toast" id="match-toast"></div>
@@ -164,10 +162,8 @@
         <button class="yard-era-btn active" data-outfit-section="kits" aria-pressed="true">Комплекты</button>
         <button class="yard-era-btn" data-outfit-section="shoes" aria-pressed="false">Обувь</button>
       </div>
-      <div class="yard-country-filter" id="yard-country-filter" aria-label="Страна двора">
-        <button class="yard-era-btn active" data-country="Россия" aria-pressed="true">Россия</button>
-        <button class="yard-era-btn" data-country="Испания" aria-pressed="false">Испания</button>
-      </div>
+      <div class="yard-country-filter country-filters" id="yard-country-filter" aria-label="Страна двора"></div>
+      <div class="yard-country-filter country-filters hidden" id="outfit-country-filter" aria-label="Коллекция одежды"></div>
       <div class="yard-country-filter" id="yard-season-filter" aria-label="Сезон двора">
         <button class="yard-era-btn active" data-season="summer" aria-pressed="true">Лето</button>
         <button class="yard-era-btn" data-season="winter" aria-pressed="false">Зима</button>
@@ -194,25 +190,25 @@
 
   <!-- МОДАЛКИ -->
   <div class="modal-wrap hidden" id="modal-wrap">
-    <div class="modal" id="modal-box"></div>
+    <div class="modal" id="modal-box" role="dialog" aria-modal="true" aria-labelledby="modal-title"></div>
   </div>
 
 </div>
 <script src="js/sound.js?v=20261112-16"></script>
-<script src="js/save.js?v=20261112-20"></script>
-<script src="js/collections.js?v=20261112-20"></script>
-<script src="js/wardrobe.js?v=20261112-20"></script>
-<script src="js/competition.js?v=20261112-16"></script>
-<script src="js/activity.js?v=20261112-20"></script>
-<script src="js/shot-rules.js?v=20261112-16"></script>
-<script src="js/room-rules.js?v=20261112-16"></script>
-<script src="js/yards.js?v=20261112-20"></script>
-<script src="js/gesture.js?v=20261112-16"></script>
-<script src="js/mode_dog.js?v=20261112-20"></script>
-<script src="js/mode_square.js?v=20261112-20"></script>
-<script src="js/mode_am300.js?v=20261112-20"></script>
-<script src="js/mode_cross.js?v=20261112-20"></script>
-<script src="js/online.js?v=20261112-16"></script>
-<script src="js/main.js?v=20261112-20"></script>
+<script src="js/save.js?v=20261112-21"></script>
+<script src="js/collections.js?v=20261112-21"></script>
+<script src="js/wardrobe.js?v=20261112-21"></script>
+<script src="js/competition.js?v=20261112-21"></script>
+<script src="js/activity.js?v=20261112-21"></script>
+<script src="js/shot-rules.js?v=20261112-21"></script>
+<script src="js/room-rules.js?v=20261112-21"></script>
+<script src="js/yards.js?v=20261112-21"></script>
+<script src="js/gesture.js?v=20261112-21"></script>
+<script src="js/mode_dog.js?v=20261112-21"></script>
+<script src="js/mode_square.js?v=20261112-21"></script>
+<script src="js/mode_am300.js?v=20261112-21"></script>
+<script src="js/mode_cross.js?v=20261112-21"></script>
+<script src="js/online.js?v=20261112-21"></script>
+<script src="js/main.js?v=20261112-21"></script>
 </body>
 </html>

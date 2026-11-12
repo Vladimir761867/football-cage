@@ -12,16 +12,40 @@ const Wardrobe = (() => {
     {id:era+'-street',era,name:a,description:ad,style:'Дворовая одежда',price:0,row:0},
     {id:era+'-football',era,name:b,description:bd,style:'Футбольная форма',price:120,row:2}
   ]).map(item => [item.id,item]));
+  const countries = {
+    'Бразилия': 'br',
+    'Китай': 'cn',
+    'Индия': 'in'
+  };
+  const regional = [
+    ['br','90','Соседи с холма','Терракотовая футболка, синие шорты и кроссовки.',
+      'Вечерняя квадра','Золотая майка с зелёной окантовкой, синие шорты и бутсы для футзала.'],
+    ['cn','00','После уроков в Гуанчжоу','Светлая футболка с тёмными манжетами, спортивные брюки и кроссовки.',
+      'Районная команда Чэнду','Красная футболка со светлыми вставками, чёрные шорты и бутсы.'],
+    ['in','00','После школы на майдане','Сливовая хлопковая футболка, тёмные шорты и синие кроссовки.',
+      'Команда Калькутты','Голубая футболка с тёмными панелями, шорты и бутсы.']
+  ];
+  for (const [asset,era,street,streetDesc,kit,kitDesc] of regional) {
+    const country = Object.keys(countries).find(name => countries[name] === asset);
+    catalog[asset+'-street'] = {id:asset+'-street',era,country,asset,name:street,description:streetDesc,style:'Дворовая одежда',price:0,row:0};
+    catalog[asset+'-football'] = {id:asset+'-football',era,country,asset,name:kit,description:kitDesc,style:'Футбольная форма',price:120,row:2};
+  }
   const assets = new Map();
-  const list = era => Object.values(catalog).filter(item => item.era === era);
+  const list = (era,country) => Object.values(catalog).filter(item => countries[country] ? item.country === country : !item.country && item.era === era);
   const owns = id => Object.hasOwn(catalog,id) && (Save.openCatalog || catalog[id].price === 0 || Save.data.ownedOutfits.includes(id));
-  function selected(era) {
+  function selected(era,country) {
+    if (Object.hasOwn(countries,country)) {
+      const id = Save.data.outfitsByCountry?.[country];
+      return catalog[id]?.country === country && owns(id) ? catalog[id] : catalog[countries[country]+'-street'];
+    }
     const id = Save.data.outfitsByEra[era];
     return catalog[id]?.era === era && owns(id) ? catalog[id] : catalog[era+'-street'] || catalog['90-street'];
   }
   function equip(id) {
     if (!owns(id)) return false;
-    Save.data.outfitsByEra[catalog[id].era] = id;
+    const item = catalog[id];
+    if (item.country) Save.data.outfitsByCountry[item.country] = id;
+    else Save.data.outfitsByEra[item.era] = id;
     Save.save();
     return true;
   }
@@ -36,7 +60,7 @@ const Wardrobe = (() => {
     return equip(id);
   }
   // Сервер принимает только известные комплекты эпохи сетевой площадки.
-  function roomOutfit(id) { return catalog[id]?.era === '90' ? id : '90-street'; }
+  function roomOutfit(id) { return catalog[id]?.era === '90' && !catalog[id].country ? id : '90-street'; }
   function shoeFrame(pixels,stride,x,y,w,h) {
     // Выбираем основной силуэт, чтобы в кадр не попал край соседней позы.
     const visited = new Uint8Array(w*h);
@@ -84,7 +108,7 @@ const Wardrobe = (() => {
       asset.frames = Array.from({length:16}, (_,index) => {
         const sx = Math.round(index%4*cw), sy = Math.round(Math.floor(index/4)*ch);
         const ex = Math.round((index%4+1)*cw), ey = Math.round((Math.floor(index/4)+1)*ch);
-        if (shoes) return shoeFrame(pixels,canvas.width,sx,sy,ex-sx,ey-sy);
+        if (shoes || !Object.hasOwn(eras,era)) return shoeFrame(pixels,canvas.width,sx,sy,ex-sx,ey-sy);
         let left=ex, right=sx, top=ey, bottom=sy;
         for (let y=sy; y<ey; y++) for (let x=sx; x<ex; x++) {
           if (pixels[(y*canvas.width+x)*4+3] < 32) continue;
@@ -97,21 +121,24 @@ const Wardrobe = (() => {
     asset.image.addEventListener('error', () => {
       asset.failed=true; window.dispatchEvent(new Event('wardrobe-ready'));
     });
-    asset.image.src = 'assets/' + key + '.webp?v=' + (shoes ? '20' : '20261112-16');
+    asset.image.src = 'assets/' + key + '.webp?v=' + (!Object.hasOwn(eras,era) ? '21' : shoes ? '20' : '20261112-16');
     return asset;
   }
   function draw(ctx,x,y,size,id,pose,motion={}) {
     const item=catalog[id];
     if (!item) return false;
-    const customShoes = motion.shoes ? load(item.era,true) : null;
-    const asset = customShoes?.frames ? customShoes : load(item.era);
+    const customShoes = motion.shoes && !item.country ? load(item.era,true) : null;
+    const asset = customShoes?.frames ? customShoes : load(item.asset || item.era);
     if (!asset.frames) return false;
     const phase=Number.isFinite(motion.phase) ? motion.phase : performance.now()/240;
     const diving=pose==='keeper' && motion.dive;
     let frame=4;
     if (pose==='keeper') frame=diving ? 7 : 6;
-    else if (motion.kick) frame=5;
-    else if (motion.moving) frame=Math.floor(((phase/(Math.PI/2))%4+4)%4);
+    else if (motion.kick) frame=item.country ? 3 : 5;
+    else if (motion.moving) {
+      const stride = Math.floor(((phase/(Math.PI/2))%4+4)%4);
+      frame = item.country ? 1 + stride % 2 : stride;
+    }
     const f=asset.frames[item.row*4+frame], ref=asset.frames[item.row*4+4];
     const scale=150*size/ref.h;
     const w=f.w*scale, h=f.h*scale;
@@ -126,7 +153,7 @@ const Wardrobe = (() => {
   }
   function drawFootwear(ctx,w,h,id,special) {
     const item = catalog[id];
-    const asset = load(item.era,special);
+    const asset = load(item.asset || item.era,special && !item.country);
     if (!asset.frames) return false;
     const frame = asset.frames[item.row*4+4];
     const crop = Math.round(frame.h*.23);
@@ -135,6 +162,6 @@ const Wardrobe = (() => {
       (w-frame.w*scale)/2,(h-crop*scale)/2,frame.w*scale,crop*scale);
     return true;
   }
-  return {eras,catalog,list,owns,selected,equip,buy,roomOutfit,load,draw,drawFootwear};
+  return {eras,countries,catalog,list,owns,selected,equip,buy,roomOutfit,load,draw,drawFootwear};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = Wardrobe;

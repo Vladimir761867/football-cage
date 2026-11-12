@@ -3,7 +3,7 @@ const Activities = (() => {
   const catalog = {
     targets: { mode: 'am300', title: 'Три цели', description: 'За пять ударов попади в штангу, перекладину и девятку.', events: ['post','bar','corner'], goal: 3, distinct: true, shots: 5 },
     bar: { mode: 'am300', title: 'Звон перекладины', description: 'Дважды попади в перекладину за пять ударов.', events: ['bar'], goal: 2, shots: 5 },
-    dog: { mode: 'dog', title: 'Пасы под давлением', description: 'Собери серию из 12 передач без потери за 55 секунд.', events: ['pass'], goal: 12, time: 55, streak: true },
+    dog: { mode: 'dog', title: 'Пасы под давлением', description: 'Сделай пять своих передач подряд без личной потери за 55 секунд.', events: ['pass'], goal: 5, time: 55, streak: true },
     square: { mode: 'square', title: 'Хозяин четверти', description: 'Сделай пять точных отбиваний за 55 секунд.', events: ['return'], goal: 5, time: 55 },
     cross: { mode: 'cross', title: 'С лёта', description: 'Забей дважды за шесть розыгрышей.', events: ['goal'], goal: 2, rounds: 6 }
   };

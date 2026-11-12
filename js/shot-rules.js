@@ -23,11 +23,13 @@ const ShotRules = {
   },
   kick(goal, ball, drag, maxDrag, phase, cfg, random = Math.random) {
     const power = Math.min(1.1, Math.hypot(drag.dx, drag.dy) / maxDrag);
-    const timing = Math.abs(Math.sin(phase * 4.6));
+    const timing = Math.abs(Math.sin(phase * (cfg.rate ?? 4.6)));
     const golden = timing < cfg.window;
     const powerError = power < .35 ? (.35 - power) * 3 : power > .95 ? (power - .95) * 4 : 0;
     const drift = (timing * (golden ? .22 : .9) + powerError) * goal.w * cfg.spread;
-    const a = random() * Math.PI * 2;
+    // В одиночной игре ошибка читается по положению бегунка: уход мяча
+    // влево или вправо предсказуем при одинаковом жесте и тайминге.
+    const a = cfg.rate ? (Math.sin(phase * cfg.rate) < 0 ? Math.PI*.93 : Math.PI*.07) : random() * Math.PI * 2;
     const aim = this.aim(goal, ball, drag, maxDrag);
     const to = { x:aim.x + Math.cos(a) * drift, y:aim.y + Math.sin(a) * drift * .7 };
     if (power < .30) to.y = goal.y - 6;

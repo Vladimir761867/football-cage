@@ -7,6 +7,7 @@ class Am300Mode {
     const { W, H } = env;
     this.difficulty = env.difficulty || 'normal';
     this.cfg = Difficulty.american(this.difficulty);
+    this.keeperCfg = env.practice === 'keeper' ? Difficulty.keeper(this.difficulty) : null;
     if (env.tutorial) this.cfg = { ...this.cfg, spread: 0 };
     const atlasCourt = Boolean(Yards.theme().atlas);
     const goalW = atlasCourt ? Math.min(W * .65, H * .22) : W * .72;
@@ -16,7 +17,7 @@ class Am300Mode {
     this.you = 0;
     this.opponents = Array.from({ length: env.opponentCount ?? 1 }, (_, i) => ({ name: `Игрок ${i + 2}`, score: 0 }));
     this.round = 1;
-    this.ballsLeft = env.challenge?.shots || 5;
+    this.ballsLeft = this.keeperCfg ? 10 : env.challenge?.shots || 5;
     this.targets = new Set();
     this.state = 'aim'; // aim | fly | impact | bot | done
     this.aim = null;    // текущая точка прицела
@@ -28,14 +29,20 @@ class Am300Mode {
     this.bestMoment = ''; this.bestVal = 0;
     this.maxDrag = H * .5;
     this.botFly = null; this.botShooter = -1; this.react = null; this.kickT = 0; this.botKickT = 0;
+    this.keeperX = this.goal.x + this.goal.w/2;
+    this.keeperDive = 0;
+    this.saves = 0;
 
     env.hud.setPills([
-      { id: 'you', lbl: 'Ты', val: 0 },
-      { id: 'balls', lbl: 'Мячи', val: this.ballsLeft },
+      { id: 'you', lbl: this.keeperCfg ? 'Голы' : 'Ты', val: 0 },
+      { id: 'balls', lbl: 'Удары', val: this.ballsLeft },
+      ...(this.keeperCfg ? [{ id:'saves', lbl:'Сейвы', val:0 }] : []),
       ...this.opponents.map((p, i) => ({ id: `bot${i}`, lbl: p.name, val: 0 }))
     ]);
-    env.hud.setTimer(env.challenge || env.tutorial || env.quick ? '🎯' : '🎯300');
-    env.hud.hint(env.tutorial ? 'Проведи вверх от мяча к центру ворот. Пунктир покажет цель.' : env.challenge?.description || 'Потяни вверх к цели. Отпусти, когда бегунок в золотой зоне');
+    env.hud.setTimer(env.challenge || env.tutorial || env.quick || env.practice ? '🎯' : '🎯300');
+    env.hud.hint(this.keeperCfg ? 'Целься мимо вратаря. Отпусти свайп в золотой зоне.' :
+      env.tutorial ? 'Свайпни вверх к центру ворот. Пунктир покажет цель.' :
+      env.challenge?.description || 'Свайп вверх. Отпусти, когда бегунок в золотой зоне.');
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim') return;
@@ -101,13 +108,17 @@ class Am300Mode {
 
   _timing() {
     // бегунок ходит туда-сюда; золотая зона в центре
-    const ph = (Math.sin(this.oscT * 4.6) + 1) / 2; // 0..1
+    const ph = (Math.sin(this.oscT * this.cfg.rate) + 1) / 2;
     return ph;
   }
 
   _shoot(drag) {
     this.state = 'fly';
     this.fly = ShotRules.kick(this.goal, this.ballPos, drag, this.maxDrag, this.oscT, this.cfg, this.random);
+    if (this.keeperCfg) {
+      this.fly.dur += .12;
+      this.keeperDive = 0;
+    }
     this.aim = null;
     Sound.kick();
   }
@@ -120,6 +131,7 @@ class Am300Mode {
     const f = this.fly;
     const { to, golden } = f;
     const z = f.zone || this._zoneAt(to.x, to.y);
+    if (this.keeperCfg) { this._keeperImpact(f,z); return; }
     let pts = z.pts, label = z.name;
     if (z.pts === 75 && golden) { pts = 100; label = 'Девятка + тайминг'; }
     this.impactFx = { x: to.x, y: to.y, t: 0, pts, label };
@@ -167,23 +179,26 @@ class Am300Mode {
     this.state = 'bot';
     this.env.hud.toast('Ход соперников…', '');
     const rest = 1 - this.cfg.miss;
-    const table = [[0, this.cfg.miss], [25, rest * .42], [50, rest * .26], [75, rest * .19], [100, rest * .13]];
-    this.botQueue = [];
-    this.opponents.forEach((_, id) => {
-      for (let i = 0; i < (this.env.quick ? 1 : 5); i++) {
-        let r = this.random(), acc = 0, pts = 0;
-        for (const [v, p] of table) { acc += p; if (r <= acc) { pts = v; break; } }
-        this.botQueue.push({ id, pts });
+    const high = this.cfg.highValue;
+    const table = [[0, this.cfg.miss], [25, rest * (1-high) * .64],
+      [50, rest * (1-high) * .36], [75, rest * high * .62], [100, rest * high * .38]];
+    this.botQueue = this.opponents.map((_, id) => {
+      const roll = this.random();
+      let cumulative = 0;
+      for (const [pts, probability] of table) {
+        cumulative += probability;
+        if (roll <= cumulative) return {id,pts};
       }
+      return {id,pts:100};
     });
-    this.botT = .8;
+    this.botT = .42;
   }
 
   update(dt) {
     if (this.state === 'impact') {
       this.impactDelay -= dt;
       if (this.impactDelay <= 0) {
-        if (this.ballsLeft <= 0 || this.env.quick) this._startBotTurn();
+        if (this.ballsLeft <= 0 || this.opponents.length) this._startBotTurn();
         else this.state = 'aim';
       }
     }
@@ -198,11 +213,16 @@ class Am300Mode {
     const ag = Yards.artGoal(this.env.W, this.env.H);
     this.goal = ag || this._defGoal;
     this.oscT += dt;
+    if (this.keeperCfg) this._moveKeeper(dt);
     if (this.state === 'fly' && this.fly) {
       this.fly.t += dt / this.fly.dur;
       if (this.fly.t >= 1) this._impact();
     }
     if (this.impactFx) { this.impactFx.t += dt; if (this.impactFx.t > .9) this.impactFx = null; }
+    if (this.rebound) {
+      this.rebound.t += dt / .42;
+      if (this.rebound.t >= 1) this.rebound = null;
+    }
     if (this.state === 'bot') {
       if (this.botFly) {
         const f = this.botFly; f.t += dt / f.dur;
@@ -212,7 +232,7 @@ class Am300Mode {
         if (this.botT <= 0) {
           if (this.botQueue.length) this._botShoot(this.botQueue.shift());
           else {
-            // конец круга — проверяем 300
+            // После хода всех участников у каждого одинаковое число ударов.
             const top = Math.max(0, ...this.opponents.map(p => p.score));
             this.botShooter = -1;
             if (this.env.quick) {
@@ -223,7 +243,8 @@ class Am300Mode {
             if (this.you >= 300 || top >= 300) {
               if (this.you === top) { this.env.hud.toast('Ничья — ещё круг!', 'gold'); this._nextRound(); }
               else this._finish(this.you > top);
-            } else this._nextRound();
+            } else if (this.ballsLeft === 0) this._nextRound();
+            else this.state = 'aim';
           }
         }
       }
@@ -258,13 +279,57 @@ class Am300Mode {
     if (pts >= 100) { this.slowT = .8; this.shakeT = .35; }
     pts >= 75 ? Sound.post() : pts ? Sound.pass() : Sound.miss();
     this.react = { t: 1.4, pts, by: f.id };
-    this.botT = .85;
+    this.botT = .38;
   }
   _nextRound() {
     this.round++;
     this.ballsLeft = 5;
     this.env.hud.setPill('balls', this.ballsLeft);
     this.state = 'aim';
+  }
+
+  _moveKeeper(dt) {
+    const cfg = this.keeperCfg, g = this.goal, middle = g.x + g.w/2;
+    const f = this.fly;
+    let target = middle + Math.sin(this.oscT*1.4)*g.w*.12;
+    if (f && f.t*f.dur >= cfg.reaction) {
+      target = U.lerp(middle,f.to.x,cfg.read);
+      if (!this.keeperDive && f.t > .68 && Math.abs(f.to.x-this.keeperX) > g.w*.055) this.keeperDive = Math.sign(f.to.x-this.keeperX);
+    }
+    if (this.state === 'impact') return;
+    this.keeperX = U.clamp(this.keeperX + U.clamp(target-this.keeperX,-cfg.speed*g.w*dt,cfg.speed*g.w*dt),
+      g.x+g.w*.10,g.x+g.w*.90);
+  }
+
+  _keeperImpact(f,zone) {
+    const g = this.goal, at = f.to;
+    const onTarget = zone.id === 'goal' || zone.id === 'corner';
+    const upper = at.y < g.y - g.h*.65;
+    const reach = g.w*this.keeperCfg.reach*(upper ? .72 : 1);
+    const saved = onTarget && Math.abs(at.x-this.keeperX) <= reach;
+    const scored = onTarget && !saved;
+    const label = scored ? 'Гол!' : saved ? 'Вратарь отбил' : zone.id === 'miss' ? 'Мимо' : zone.name;
+    const rebound = saved ? {x:U.clamp(at.x + (this.keeperDive || 1)*g.w*.42,12,this.env.W-12), y:g.y+g.h*.48} : null;
+    if (rebound) {
+      this.saves++;
+      this.rebound = {from:at,to:rebound,t:0};
+      this.env.hud.setPill('saves',this.saves);
+    }
+    if (scored) {
+      this.you++;
+      this.env.goal?.(at);
+      this.env.collect?.('keeperGoal');
+      this.env.hud.setPill('you',this.you);
+    }
+    if (onTarget) this.env.highlight?.({from:f.from,to:at,arc:70,goal:{...g},label,scored,rebound,value:scored ? 2 : 1});
+    scored ? Sound.goal() : saved ? Sound.pass() : Sound.miss();
+    this.env.hud.toast(label,scored ? 'good' : saved ? 'bad' : '');
+    this.fly = null;
+    this.ballsLeft--;
+    this.env.hud.setPill('balls',this.ballsLeft);
+    this.state = 'impact';
+    this.impactDelay = .75;
+    this.env.hud.hideHintSoon();
   }
 
   draw(ctx) {
@@ -296,7 +361,7 @@ class Am300Mode {
     const nineR = g.w * .08;
     ctx.save();
     ctx.globalAlpha = this.state === 'aim' ? .9 : .4;
-    for (const nx of [g.x + nineR * .8, g.x + g.w - nineR * .8]) {
+    for (const nx of this.keeperCfg ? [] : [g.x + nineR * .8, g.x + g.w - nineR * .8]) {
       ctx.strokeStyle = '#ffd24d'; ctx.lineWidth = 3; ctx.setLineDash([6, 6]);
       ctx.beginPath(); ctx.arc(nx, topY + nineR * 1.65, nineR, 0, 7); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = 'rgba(255,210,77,.9)'; ctx.font = '700 13px Rubik'; ctx.textAlign = 'center';
@@ -307,14 +372,23 @@ class Am300Mode {
     // Игроки: стреляющий у мяча, остальные стоят справа и смотрят на мяч/удар.
     this._drawActors(ctx, W, H);
     // подписи целей
-    ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '700 12px Rubik'; ctx.textAlign = 'center';
-    Yards.drawFieldText(ctx, 'ПЕРЕКЛАДИНА 100', g.x + g.w / 2, topY - 14);
-    Yards.drawFieldText(ctx, '50', g.x - 16, g.y - g.h / 2);
-    Yards.drawFieldText(ctx, '50', g.x + g.w + 16, g.y - g.h / 2);
+    if (this.keeperCfg) {
+      Yards.drawPlayer(ctx,this.keeperX,g.y+5,Math.min(1.15,g.h/104),'#d25743','keeper',
+        {me:false,moving:false,dive:this.keeperDive,face:1});
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '700 12px Rubik'; ctx.textAlign = 'center';
+      Yards.drawFieldText(ctx, 'ПЕРЕКЛАДИНА 100', g.x + g.w / 2, topY - 14);
+      Yards.drawFieldText(ctx, '50', g.x - 16, g.y - g.h / 2);
+      Yards.drawFieldText(ctx, '50', g.x + g.w + 16, g.y - g.h / 2);
+    }
 
     // мяч и прицел
-    if ((this.state === 'aim' || this.state === 'impact' || this.state === 'bot') && !this.botFly) {
+    if ((this.state === 'aim' || this.state === 'impact' || this.state === 'bot') && !this.botFly && !this.rebound) {
       Yards.drawBall(ctx, this.ballPos.x, this.ballPos.y, 15);
+    }
+    if (this.rebound) {
+      const r = this.rebound;
+      Yards.drawBall(ctx,U.lerp(r.from.x,r.to.x,r.t),U.lerp(r.from.y,r.to.y,r.t)-Math.sin(r.t*Math.PI)*24,12,undefined,true);
     }
     if (this.state === 'aim' && this.aim && this.drag) {
       // траектория-пунктир
@@ -370,6 +444,13 @@ class Am300Mode {
   }
 
   _finish(won, draw = false) {
+    if (this.env.practice) {
+      this.env.finish({title:'Тренировка окончена',
+        score:this.keeperCfg ? `${this.you} из 10 голов` : `${this.you} очк.`,
+        sub:this.keeperCfg ? `Вратарь отбил ${this.saves} · ${10-this.you-this.saves} мимо или в каркас` : 'Пять ударов по раме и углам',
+        coins:0,practice:true});
+      return;
+    }
     const top = Math.max(0, ...this.opponents.map(p => p.score));
     const newBest = !this.env.challenge && Save.setBest('am300', this.you);
     const coins = this.env.challenge ? 0 : Math.round(this.you / 10) + (won ? 30 : 0) + (newBest ? 15 : 0);

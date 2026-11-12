@@ -81,9 +81,22 @@ RUSSIAN_COURTS.forEach(([code, era, names, surfaces]) => names.forEach((name, va
     ...YARDS.classic, id, decade, era, country: 'Испания', city, desc,
     name: `${city} · ${era}`, items: 'Площадка для мини-футбола',
     photo: { file, aspect: 2 / 3, goal, window },
-    free, priceCoins: free ? 0 : 180
+    free, priceRub: free ? 0 : 249
   };
 });
+
+const COUNTRY_COURTS = [
+  ['br90_rio','Бразилия','90','90-е','Рио · Коробка на холме','Бетонная площадка в фавеле, кирпичные дома на склоне и тёплый влажный вечер.','rio-morro',0,[.237,.420,.525,.165]],
+  ['br20_recife','Бразилия','20','2020-е','Ресифи · Квадра после дождя','Открытая площадка для футзала, цветные дома, пальмы и влажный бетон.','recife-quadra',249,[.236,.374,.526,.168]],
+  ['cn00_guangzhou','Китай','00','2000-е','Гуанчжоу · Старый квартал','Бетон между жилыми домами, зелёная ограда и тень баньяна.','guangzhou-yard',0,[.242,.425,.519,.159]],
+  ['cn20_chengdu','Китай','20','2020-е','Чэнду · Двор в сумерках','Сетчатые борта, гинкго, балконы и фонари в вечерней дымке.','chengdu-court',249,[.237,.397,.511,.153]],
+  ['in00_mumbai','Индия','00','2000-е','Мумбаи · У майдана','Грунт, баньян и балконы жилого квартала под муссонным небом.','mumbai-maidan',0,[.238,.414,.523,.160]],
+  ['in10_kolkata','Индия','10','2010-е','Калькутта · После муссона','Мокрый бетон, старые ставни и зелёное дерево над оградой.','kolkata-box',249,[.270,.447,.459,.124]]
+];
+for (const [id,country,decade,era,city,desc,file,priceRub,goal] of COUNTRY_COURTS) {
+  YARDS[id] = {...YARDS.classic,id,country,decade,era,city,desc,name:`${city} · ${era}`,
+    items:'Площадка для мини-футбола',photo:{file,aspect:2/3,goal},free:priceRub === 0,priceRub};
+}
 
 const BALLS = {
   classic:   { id: 'classic',   name: 'Чёрно-белая классика', era: 'Базовый / 90-е', price: 0,   atlas: 1, material: 'потёртая синтетика', c1: '#f2ede2', c2: '#262626', style: 'penta' },
@@ -195,7 +208,7 @@ const Yards = (() => {
     return { ...seasonal(base, custom.season), id:'custom', name:`Мой двор · ${base.country} · ${base.era}`, custom };
   }
   function seasonal(base, season) {
-    if (season !== 'winter' || base.country === 'Испания') return base;
+    if (season !== 'winter' || (base.country && base.country !== 'Россия')) return base;
     return { ...base, season, atlas: base.atlas || ballEra(base), variant: base.variant ?? 0,
       name: base.name.replace(' после дождя', '') };
   }
@@ -972,7 +985,14 @@ const Yards = (() => {
   function drawPlayer(ctx, x, y, s, color, pose, motion) {
     const me = motion?.me ?? color === '#3f7fba';
     const era = ballEra();
-    const outfit = motion?.outfit || (me ? Wardrobe.selected(era).id : era + (color === '#c0392b' || color === '#d25743' ? '-football' : '-street'));
+    const country = theme().country;
+    const region = Object.hasOwn(Wardrobe.countries,country) ? Wardrobe.countries[country] : era;
+    const selected = Wardrobe.selected(era,country).id;
+    let rival = region + (color === '#c0392b' || color === '#d25743' ? '-football' : '-street');
+    if (pose === 'keeper' && rival === selected) {
+      rival = region + (selected.endsWith('-football') ? '-street' : '-football');
+    }
+    const outfit = motion?.outfit || (me ? selected : rival);
     if (me) {
       ctx.save(); ctx.strokeStyle='#a3ec75'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.ellipse(x,y+2,19*s,6*s,0,0,Math.PI*2); ctx.stroke(); ctx.restore();

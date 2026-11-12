@@ -11,7 +11,7 @@
   let activeMode = null, rafId = 0, lastT = 0, gesture = null, lastModeId = null;
   let hintTimer = 0, toastTimer = 0;
   let difficulty = Difficulty.ids.includes(Save.data.difficulty) ? Save.data.difficulty : 'normal';
-  let opponentCount = 1;
+  let opponentCount = [1,2,3].includes(Save.data.opponentCount) ? Save.data.opponentCount : 1;
   let paused = false, artRevision = 0;
   let matchIsCup = false;
   let matchOptions = {};
@@ -20,7 +20,9 @@
   let lastGoal = null;
   let refreshYardPreview = null;
   let refreshAlbum = null;
+  let modalFocus = null, modalDismiss = null;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const countries = [...new Set(Object.values(YARDS).map(yard => yard.country || 'Россия'))];
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -53,10 +55,10 @@
     $('#home-yard-label').textContent = yard.name + (yard.season === 'winter' ? ' · Зима' : '');
   }
   function updateBests() {
-    $('#best-dog').textContent = Save.data.best.dog ? `Рекорд: ${Save.data.best.dog} очк.` : 'Ещё не играл';
-    $('#best-square').textContent = Save.data.best.square ? `Рекорд: ${Save.data.best.square} очк.` : 'Ещё не играл';
-    $('#best-am300').textContent = Save.data.best.am300 ? `Рекорд: ${Save.data.best.am300} очк.` : 'Ещё не играл';
-    $('#best-cross').textContent = Save.data.best.cross ? `Рекорд: ${Save.data.best.cross} очк.` : 'Ещё не играл';
+    for (const id of Object.keys(MODES)) {
+      const best = Save.data.best[id];
+      $('#best-'+id).textContent = best || Save.data.playedModes[id] ? `Рекорд: ${best || 0} очк.` : '';
+    }
   }
 
   /* ---------- HUD матча ---------- */
@@ -98,6 +100,28 @@
     am300: { cls: Am300Mode, title: 'Американка 300' },
     cross: { cls: CrossMode, title: 'Навес' }
   };
+  const W = 520, H = 1120;
+
+  function fitMatchCanvas() {
+    const canvas = $('#match-canvas');
+    const viewport = screens.match.getBoundingClientRect();
+    if (!viewport.width || !viewport.height) return;
+    const scale = Math.min(viewport.width/W,viewport.height/H);
+    const width = W*scale, height = H*scale;
+    canvas.style.width = width+'px';
+    canvas.style.height = height+'px';
+    screens.match.style.setProperty('--field-width',width+'px');
+    const dpr = Math.min(2,window.devicePixelRatio || 1);
+    const pixelsW = Math.round(width*dpr), pixelsH = Math.round(height*dpr);
+    if (canvas.width !== pixelsW || canvas.height !== pixelsH) {
+      gesture?._cancel();
+      canvas.width = pixelsW;
+      canvas.height = pixelsH;
+    }
+    canvas.logicalWidth = W;
+    canvas.logicalHeight = H;
+    canvas.getContext('2d').setTransform(canvas.width/W,0,0,canvas.height/H,0,0);
+  }
 
   function startMode(id, inCup = false, options = {}) {
     matchIsCup = inCup;
@@ -113,8 +137,8 @@
       description: cup.stage === 0 ? 'За пять ударов попади в штангу или перекладину.' : 'За пять ударов попади в девятку.' }
       : options.challenge;
     const progress = challenge && Activities.tracker(challenge);
-    const collection = options.tutorial || options.online ? null : Collections.match();
-    const matchDifficulty = cup ? Cups.difficulty(cup) : options.tutorial ? 'beginner' : challenge?.difficulty || difficulty;
+    const collection = options.tutorial || options.online || options.practice === 'solo' ? null : Collections.match();
+    const matchDifficulty = cup ? Cups.difficulty(cup) : options.tutorial ? 'beginner' : challenge?.difficulty || options.difficulty || difficulty;
     Yards.syncBallToYard();
     if (options.online) Yards.setScene(YARDS.ru90_1);
     else if (challenge) Yards.setScene(challenge.custom ? Yards.editedTheme(challenge.custom) : YARDS[challenge.yard]);
@@ -125,35 +149,24 @@
     clearTimeout(hintTimer); clearTimeout(toastTimer);
     $('#match-toast').textContent = '';
     $('#match-toast').className = 'match-toast';
-    $('#match-title').textContent = cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : challenge?.title || MODES[id].title;
+    $('#match-title').textContent = options.online?.room.cup ? 'Кубок команд' : options.practice === 'keeper' ? 'Удары по воротам' :
+      options.practice === 'solo' ? 'Удары по мишеням' :
+      cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : challenge?.title || MODES[id].title;
     $('#match-hint').classList.remove('off');
     $('#btn-skip-lesson').classList.toggle('hidden', !options.tutorial);
     choose([]);
     const canvas = $('#match-canvas');
-    canvas.style.width = ''; canvas.style.height = ''; canvas.style.inset = '';
-    if (challenge || options.online) {
-      const viewport = screens.match.getBoundingClientRect();
-      const width = Math.min(viewport.width, viewport.height * 520/1120);
-      canvas.style.width = width + 'px';
-      canvas.style.height = width * 1120/520 + 'px';
-      canvas.style.inset = '0'; canvas.style.margin = 'auto';
-    } else canvas.style.margin = '';
-    const r = canvas.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    canvas.width = Math.round(r.width * dpr);
-    canvas.height = Math.round(r.height * dpr);
-    const ctx = canvas.getContext('2d');
-    // Игровые размеры не зависят от плотности пикселей экрана.
-    const W = canvas.logicalWidth = 520;
-    const H = canvas.logicalHeight = W * r.height / r.width;
-    ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
     if (gesture) gesture.destroy();
+    gesture = null;
+    fitMatchCanvas();
+    const ctx = canvas.getContext('2d');
     gesture = new Gesture(canvas);
     const bgCache = {};
     const env = {
       canvas, ctx, W, H, gesture, hud, difficulty: matchDifficulty,
-      opponentCount: challenge || options.tutorial ? 0 : cup || options.quick ? 1 : opponentCount,
-      cup: !!cup, cupStage: cup?.stage, tutorial: options.tutorial,
+      opponentCount: challenge || options.tutorial || options.practice ? 0 : cup || options.quick ? 1 : opponentCount,
+      cup: !!cup, cupStage: cup?.stage, tutorial: options.tutorial, practice: options.practice,
+      attackOnly: id === 'cross',
       challenge, quick: options.quick, rotateDog: options.rotateDog, online:options.online, invite:shareRoom,
       random: challenge ? Activities.random(challenge.key) : Math.random,
       choose,
@@ -179,7 +192,8 @@
         }
       },
       bgFor(key, painter) {
-        if (!bgCache[key] || bgCache[key].revision !== artRevision) {
+        if (!bgCache[key] || bgCache[key].revision !== artRevision ||
+            bgCache[key].width !== canvas.width || bgCache[key].height !== canvas.height) {
           const oc = document.createElement('canvas');
           oc.width = canvas.width; oc.height = canvas.height;
           const background = oc.getContext('2d');
@@ -208,6 +222,7 @@
         if (cup) result.cupResult = Cups.settle(result);
         if (!result.aborted) {
           result.collection = collection?.finish(Yards.theme(), result.cupResult?.status === 'won', Activities.day());
+          if (!challenge && !options.practice && !options.online) Save.data.playedModes[id] = true;
           trackMatch();
         }
         stopLoop();
@@ -254,10 +269,10 @@
     const row = $('#match-choices');
     row.replaceChildren();
     row.classList.toggle('hidden', !options.length);
-    screens.match.classList.toggle('has-choices', !!options.length);
     options.forEach((option, index) => {
-      const b = document.createElement('button'); b.className = 'btn ' + (index === 0 ? 'btn-green' : 'btn-paper');
-      b.textContent = option.text; b.setAttribute('aria-pressed', index === 0);
+      const selected = option.selected ?? index === 0;
+      const b = document.createElement('button'); b.className = 'btn ' + (selected ? 'btn-green' : 'btn-paper');
+      b.textContent = option.text; b.setAttribute('aria-pressed', selected);
       b.onclick = () => {
         option.action();
         Array.from(row.children).forEach(el => {
@@ -292,9 +307,10 @@
     $('#result-collection').textContent = rewards.join(' · ');
     $('#btn-result-album').classList.toggle('hidden', rewards.length === 0);
     $('#btn-rematch').textContent = '🔁 Ещё раз';
+    $('#btn-result-menu').textContent = res.practice ? 'К тренировкам' : 'В меню';
     if (res.lesson) $('#btn-rematch').textContent = 'Начать матч';
     if (matchOptions.online) $('#btn-rematch').textContent = 'Новая комната';
-    $('#btn-share-result').classList.toggle('hidden', !lastActivity && !replay);
+    $('#btn-share-result').classList.toggle('hidden', res.practice || (!lastActivity && !replay));
     $('#btn-replay').classList.toggle('hidden', !replay);
     if (res.cupResult) {
       const r = res.cupResult;
@@ -313,8 +329,16 @@
       b.classList.toggle('active', b.dataset.difficulty === difficulty);
       b.setAttribute('aria-pressed', b.dataset.difficulty === difficulty);
     });
-    const cfg = Difficulty.dog(difficulty);
-    $('#difficulty-detail').textContent = `${Difficulty.name(difficulty)} · Собачка ${cfg.passers}×${cfg.dogs} · ${cfg.hold.toFixed(1).replace('.', ',')} с на пас`;
+    $('#difficulty-detail').textContent = Difficulty.name(difficulty);
+    $$('.mode-card').forEach(card => {
+      let label = card.querySelector('.mode-level');
+      if (!label) {
+        label = document.createElement('div');
+        label.className = 'mode-level';
+        card.querySelector('.mode-card-best').before(label);
+      }
+      label.textContent = Difficulty.details(card.dataset.mode,difficulty);
+    });
     const c = Cups.current(), pending = c && ['ready','playing'].includes(c.status);
     $('#continue-cup').classList.toggle('hidden', !pending);
     if (pending) $('#continue-cup').textContent = `Продолжить: ${MODES[c.mode].title} · ${Cups.stages[c.stage]}`;
@@ -332,15 +356,59 @@
   }
 
   function playMode(id) {
-    if (Save.data.tutorialSeen[id]) { startMode(id); return; }
-    modal(`<h3>${MODES[id].title}</h3><p>Сделай один розыгрыш с подсказкой и переходи к матчу.</p>
-      <div class="modal-actions"><button class="btn btn-paper" id="direct-match">Сразу в матч</button>
-      <button class="btn btn-primary" id="start-lesson">Попробовать</button></div>`);
+    const seen = Save.data.tutorialSeen[id];
+    if (seen && id !== 'am300') { startMode(id); return; }
+    const rivals = id === 'am300' ? `<div class="opponents-picker"><span>Соперники</span>
+      ${[1,2,3].map(n => `<button class="opponents-btn ${n === opponentCount ? 'active' : ''}" data-opponents="${n}" aria-pressed="${n === opponentCount}">${n}</button>`).join('')}</div>` : '';
+    modal(`<h3>${MODES[id].title}</h3><p>${Difficulty.details(id,difficulty)}</p>${rivals}
+      <div class="feature-stack"><button class="btn btn-primary" id="direct-match">${seen ? 'Начать матч' : 'Сразу в матч'}</button>
+      <button class="btn btn-paper" id="start-lesson">Обучение</button><button class="btn btn-paper" data-close>Назад</button></div>`);
+    $$('[data-opponents]').forEach(b => b.onclick = () => {
+      opponentCount = Number(b.dataset.opponents);
+      Save.data.opponentCount = opponentCount;
+      Save.save();
+      $$('[data-opponents]').forEach(button => {
+        button.classList.toggle('active',button === b);
+        button.setAttribute('aria-pressed',button === b);
+      });
+    });
     $('#direct-match').onclick = () => {
       Save.data.tutorialSeen[id] = true; Save.save();
       closeModal(); startMode(id);
     };
     $('#start-lesson').onclick = () => { closeModal(); startMode(id,false,{ tutorial:true }); };
+  }
+
+  function trainingMenu() {
+    let level = Difficulty.ids.includes(Save.data.practiceDifficulty) ? Save.data.practiceDifficulty : difficulty;
+    modal(`<h3>Тренировка</h3><div class="difficulty-picker"><span>Сложность</span>
+      ${Difficulty.ids.map((id,i) => `<button class="difficulty-btn" data-practice-level="${id}"
+        aria-label="${Difficulty.name(id)}">${i+1}</button>`).join('')}</div>
+      <p id="practice-details"></p>
+      <div class="feature-stack">
+        <button class="btn btn-primary" data-practice="solo">Американка · 5 ударов</button>
+        <button class="btn btn-green" data-practice="keeper">Против вратаря · 10 ударов</button>
+        <button class="btn btn-paper" data-close>Назад</button>
+      </div>`);
+    function update() {
+      $('#practice-details').textContent = `${Difficulty.details('am300',level)}. ${Difficulty.details('keeper',level)}.`;
+      $$('[data-practice-level]').forEach(button => {
+        const selected = button.dataset.practiceLevel === level;
+        button.classList.toggle('active',selected);
+        button.setAttribute('aria-pressed',selected);
+      });
+    }
+    $$('[data-practice-level]').forEach(button => button.onclick = () => {
+      level = button.dataset.practiceLevel;
+      Save.data.practiceDifficulty = level;
+      Save.save();
+      update();
+    });
+    $$('[data-practice]').forEach(button => button.onclick = () => {
+      closeModal();
+      startMode('am300',false,{practice:button.dataset.practice,difficulty:level});
+    });
+    update();
   }
 
   function activityModal(challenge) {
@@ -362,17 +430,17 @@
     }).join('')}</div><button class="btn btn-primary" data-close>Готово</button>`);
     $$('#modal-box [data-activity]').forEach(b => b.onclick = () => activityModal(Activities.definition(b.dataset.activity)));
   }
-  function shareActivity(challenge, score) {
-    copyDialog('Вызови друга','По ссылке откроется то же задание. Друг сыграет в удобное время и сможет прислать свой результат.',Activities.link(challenge,score));
+  function shareActivity(challenge, score, onBack) {
+    copyDialog('Вызови друга','По ссылке откроется то же задание. Друг сыграет в удобное время и сможет прислать свой результат.',Activities.link(challenge,score),onBack);
   }
   function shareRoom(session) {
     copyDialog('Приглашение в комнату',`Код ${session.room.code}. Отправь ссылку всем участникам.`,OnlineRooms.link(session));
   }
-  function copyDialog(title,description,link) {
+  function copyDialog(title,description,link,onBack) {
     modal(`<h3>${title}</h3><p>${description}</p>
       <label class="room-fields">Ссылка<input class="share-link" id="share-link" readonly></label>
       <p class="feature-status" id="share-status" role="status"></p>
-      <div class="modal-actions"><button class="btn btn-paper" data-close>Готово</button><button class="btn btn-primary" id="copy-share">Копировать</button></div>`);
+      <div class="modal-actions"><button class="btn btn-paper" data-close>${onBack ? 'В редактор' : 'Готово'}</button><button class="btn btn-primary" id="copy-share">Копировать</button></div>`,onBack,onBack);
     $('#share-link').value = link;
     $('#copy-share').onclick = async () => {
       try { await navigator.clipboard.writeText(link); if ($('#share-status')) $('#share-status').textContent = 'Ссылка скопирована'; }
@@ -381,17 +449,25 @@
   }
 
   function onlineLobby(invite = {}) {
-    modal(`<h3>С друзьями</h3><p>Дуэль в «Американке» на двоих или «Квадрат» на четверых.</p>
+    modal(`<h3>С друзьями</h3>
       <div class="room-fields">
-        <label>Адрес сервера комнат<input id="room-origin" type="url" placeholder="https://…" autocomplete="off"></label>
+        <label>Название команды<input id="room-team" maxlength="24" placeholder="Например, Соседи" autocomplete="off"></label>
         <label>Код комнаты<input id="room-code" maxlength="6" autocomplete="off" placeholder="6 символов"></label>
+        <label>Адрес сервера комнат<input id="room-origin" type="url" placeholder="https://…" autocomplete="off"></label>
       </div>
-      <p class="feature-small">Если игра открыта с сервера комнат, адрес можно оставить пустым. Для GitHub Pages нужен адрес отдельного сервера.</p>
       <p class="feature-status" id="room-status" role="status"></p>
       <div class="feature-stack"><button class="btn btn-green" id="join-room">Войти по коду</button>
-        <button class="btn btn-primary" data-create-room="am300">Создать дуэль</button>
-        <button class="btn btn-paper" data-create-room="square">Создать квадрат</button></div>`);
+        <button class="btn btn-primary" data-create-room="am300">Создать дуэль · 2 команды</button>
+        <button class="btn btn-paper" data-create-room="square">Создать квадрат · 4 команды</button>
+        <button class="btn btn-paper" data-create-room="cup">Кубок · до трёх сетов</button>
+        <button class="btn btn-paper" data-close>Закрыть</button></div>`);
     const origin = $('#room-origin'), code = $('#room-code'), status = $('#room-status');
+    const team = $('#room-team');
+    team.value = Save.data.teamName || '';
+    team.onchange = () => {
+      team.value = Save.data.teamName = RoomField.teamName(team.value);
+      Save.save();
+    };
     origin.value = invite.server || Save.data.roomOrigin || '';
     code.value = invite.code || Save.data.roomCode || '';
     const buttons = $$('#modal-box #join-room, #modal-box [data-create-room]');
@@ -402,12 +478,17 @@
       status.textContent = 'Подключение…';
       try {
         const server = OnlineRooms.origin(origin.value);
-        const session = await OnlineRooms.enter(server,mode,roomCode);
-        if (!status.isConnected || $('#modal-wrap').classList.contains('hidden')) {
+        const name = RoomField.teamName(team.value);
+        const cup = mode === 'cup';
+        const session = await OnlineRooms.enter(server,cup ? 'am300' : mode,roomCode,{team:name,cup});
+        const obsoleteServer = cup && !session.room.cup;
+        if (obsoleteServer || !status.isConnected || $('#modal-wrap').classList.contains('hidden')) {
           OnlineRooms.request(server,'/'+session.room.code+'/leave',{body:{},token:session.token}).catch(() => {});
+          if (obsoleteServer) throw new Error('Сервер комнат нужно обновить для игры в кубке.');
           return;
         }
         Save.data.roomOrigin = origin.value.trim();
+        Save.data.teamName = name;
         Save.data.roomCode = session.room.code; Save.save();
         closeModal(); startMode(session.room.mode,false,{online:session});
       } catch (e) { status.textContent = e.message; }
@@ -530,7 +611,7 @@
     const draft = YardEditor.clean({ ...previous, season: previous.season ?? Save.data.yardSeason });
     modal(`<h3>Мой двор</h3><canvas class="yard-editor-preview" id="yard-editor-preview" width="620" height="360"></canvas>
       <div class="editor-fields">
-        <label>Страна<select id="edit-country"><option>Россия</option><option>Испания</option></select></label>
+        <label>Страна<select id="edit-country">${countries.map(name => `<option>${name}</option>`).join('')}</select></label>
         <label>Площадка<select id="edit-base"></select></label>
         <label id="edit-season-label">Сезон<select id="edit-season"><option value="summer">Лето</option><option value="winter">Зима</option></select></label>
         ${Object.entries(editorLabels).map(([field,label]) => `<label><span id="edit-${field}-caption">${label}</span><select id="edit-${field}">
@@ -548,7 +629,7 @@
     const canvas = $('#yard-editor-preview'), ctx = canvas.getContext('2d');
     const country = $('#edit-country'), base = $('#edit-base'), season = $('#edit-season');
     country.value = YARDS[draft.base].country;
-    if (country.value === 'Испания') draft.season = Save.data.yardSeason === 'winter' ? 'winter' : 'summer';
+    if (country.value !== 'Россия') draft.season = Save.data.yardSeason === 'winter' ? 'winter' : 'summer';
     season.value = draft.season;
     function updateBases() {
       base.replaceChildren(...YardEditor.bases.map(id => YARDS[id]).filter(y => y.country === country.value)
@@ -593,7 +674,8 @@
       Yards.syncBallToYard(); closeModal(); nav('home');
     };
     $('#open-packs').onclick = () => editorPacks(draft);
-    $('#share-yard').onclick = () => shareActivity({...Activities.definition('targets'),yard:draft.base,custom:YardEditor.clean(draft)});
+    $('#share-yard').onclick = () => shareActivity({...Activities.definition('targets'),yard:draft.base,custom:YardEditor.clean(draft)},
+      undefined,() => yardEditor(draft));
     updateBases();
     refreshYardPreview = preview;
     preview();
@@ -624,6 +706,13 @@
   let yardEra = 'all';
   let yardCountry = Yards.theme().country || 'Россия';
   let outfitEra = Yards.ballEra();
+  let outfitCountry = Object.hasOwn(Wardrobe.countries,Yards.theme().country) ? Yards.theme().country : '';
+
+  function selectCurrentOutfitCollection() {
+    const country = Yards.theme().country;
+    outfitCountry = Object.hasOwn(Wardrobe.countries,country) ? country : '';
+    outfitEra = Yards.ballEra();
+  }
 
   function paintOutfit(canvas, animate = false) {
     const outfit = Wardrobe.catalog[canvas.dataset.outfit];
@@ -649,14 +738,14 @@
       {moving:animate && state===0,kick:state===1,phase,shoes});
     if (!drawn) {
       ctx.fillStyle='#f0e6d2'; ctx.textAlign='center'; ctx.font='14px system-ui';
-      ctx.fillText(Wardrobe.load(outfit.era).failed ? 'Не удалось загрузить одежду' : 'Загружаем одежду…',w/2,h/2);
+      ctx.fillText(Wardrobe.load(outfit.asset || outfit.era).failed ? 'Не удалось загрузить одежду' : 'Загружаем одежду…',w/2,h/2);
     }
   }
   function outfitModal(id) {
     const item=Wardrobe.catalog[id];
     const owned=Wardrobe.owns(id);
     modal(`<h3>${item.name}</h3><canvas class="outfit-fitting" data-outfit="${id}" width="300" height="230"></canvas>
-      <p>${item.description}</p><p class="feature-small">${item.style} · ${Wardrobe.eras[item.era]}. Бег, удар и игра в воротах в одном комплекте.</p>
+      <p>${item.description}</p><p class="feature-small">${item.style} · ${item.country || Wardrobe.eras[item.era]}</p>
       <p class="feature-status" role="status" id="outfit-status">${owned ? 'Комплект уже доступен.' : 'Цена: '+item.price+' игровых жетонов. Деньги не списываются.'}</p>
       <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button>
       <button class="btn btn-primary" id="equip-outfit">${owned ? 'Надеть' : 'Купить · 🪙 '+item.price}</button></div>`);
@@ -675,23 +764,29 @@
     };
   }
   function renderOutfits(list) {
+    const country = outfitTab === 'kits' ? outfitCountry : '';
     const note=document.createElement('p'); note.className='ball-set-note outfit-note';
-    note.textContent='Комплект и обувь сохраняются отдельно для каждого десятилетия.';
+    note.textContent=country ? 'Комплект можно надеть во всех дворах этой страны.' :
+      outfitTab === 'shoes' ? 'Обувь для комплектов по эпохам.' : 'Комплект сохраняется отдельно для каждого десятилетия.';
     list.appendChild(note);
     const play=document.createElement('button'); play.className='btn btn-green';
-    play.textContent='Играть во дворе · '+Wardrobe.eras[outfitEra];
+    play.textContent='Играть во дворе · '+(country || Wardrobe.eras[outfitEra]);
     play.onclick=() => {
-      if (Yards.ballEra()!==outfitEra) Save.data.selectedYard='ru'+outfitEra+'_1';
+      if (country && Yards.theme().country !== country) {
+        Save.data.selectedYard = Object.values(YARDS).find(yard => yard.country === country && yard.free).id;
+      } else if (!country && (Yards.ballEra() !== outfitEra || Object.hasOwn(Wardrobe.countries,Yards.theme().country))) {
+        Save.data.selectedYard='ru'+outfitEra+'_1';
+      }
       Yards.syncBallToYard(); nav('modes');
     };
     list.appendChild(play);
     if (outfitTab === 'shoes') renderShoes(list);
-    else Wardrobe.list(outfitEra).forEach(item => {
-      const selected=Wardrobe.selected(outfitEra).id===item.id;
+    else Wardrobe.list(outfitEra,country).forEach(item => {
+      const selected=Wardrobe.selected(outfitEra,country).id===item.id;
       const card=document.createElement('div'); card.className='shop-card outfit-card';
       card.innerHTML=`<canvas class="outfit-preview" data-outfit="${item.id}" width="300" height="220"></canvas>
         <div class="shop-card-body"><div class="shop-card-title">${item.name}</div>
-        <div class="outfit-category">${item.style} · ${Wardrobe.eras[item.era]} ${selected ? '· ✓ Надет' : ''}</div>
+        <div class="outfit-category">${item.style} · ${item.country || Wardrobe.eras[item.era]} ${selected ? '· ✓ Надет' : ''}</div>
         <div class="shop-card-desc">${item.description}</div>
         <div class="shop-card-actions"><button class="btn btn-paper">${selected ? 'Посмотреть в движении' : Wardrobe.owns(item.id) ? 'Примерить и надеть' : 'Примерить · 🪙 '+item.price}</button></div></div>`;
       card.querySelector('button').onclick=() => outfitModal(item.id);
@@ -815,7 +910,7 @@
                 : y.priceCoins ? '<span class="tag tag-paid">За жетоны</span>' : '<span class="tag tag-paid">Платный набор</span>'}
             </div>
             <div class="shop-card-desc">${winter ? 'Утоптанный снег на площадке и сугробы у края двора.' : y.desc}</div>
-            <div class="shop-card-items">${winter ? 'Зимнее оформление' : 'В наборе: ' + y.items}</div>
+            <div class="shop-card-items">${winter ? 'Зимнее оформление' : y.items}${Save.openCatalog && !y.free && y.priceRub ? ` · после теста ${y.priceRub} ₽` : ''}</div>
             <div class="shop-card-actions"></div>
           </div>`;
         const actions = card.querySelector('.shop-card-actions');
@@ -921,22 +1016,57 @@
   }
 
   /* ---------- модалки ---------- */
-  function modal(html, onClose) {
+  function modal(html, onClose, onDismiss) {
     if (current === 'match') {
       paused = true;
       if (gesture) { gesture._cancel(); gesture.enabled = false; }
     }
     const wrap = $('#modal-wrap');
-    $('#modal-box').innerHTML = html;
+    if (wrap.classList.contains('hidden')) modalFocus = document.activeElement;
+    modalDismiss = onDismiss;
+    screens[current].inert = true;
+    const box = $('#modal-box');
+    box.innerHTML = html;
+    box.scrollTop = 0;
     wrap.classList.remove('hidden');
+    const title = box.querySelector('h3');
+    if (title) {
+      title.id = 'modal-title';
+      title.tabIndex = -1;
+      title.focus({preventScroll:true});
+    }
     $$('#modal-box [data-close]').forEach(b => b.onclick = () => { closeModal(); onClose && onClose(); });
   }
   function closeModal() {
     $('#modal-wrap').classList.add('hidden');
+    screens[current].inert = false;
+    modalDismiss = null;
+    modalFocus?.focus({preventScroll:true});
+    modalFocus = null;
     paused = false; lastT = performance.now();
     if (gesture) gesture.enabled = true;
   }
-  $('#modal-wrap').addEventListener('click', e => { if (e.target === $('#modal-wrap')) closeModal(); });
+  function dismissModal() {
+    const onDismiss = modalDismiss;
+    closeModal();
+    onDismiss?.();
+  }
+  $('#modal-wrap').addEventListener('click', e => { if (e.target === $('#modal-wrap')) dismissModal(); });
+  document.addEventListener('keydown', event => {
+    if ($('#modal-wrap').classList.contains('hidden')) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dismissModal();
+    } else if (event.key === 'Tab') {
+      const controls = $$('#modal-box button, #modal-box input, #modal-box select, #modal-box a[href]')
+        .filter(control => !control.disabled && control.getClientRects().length);
+      const index = controls.indexOf(document.activeElement);
+      if (!controls.length || index < 0 || (event.shiftKey ? index === 0 : index === controls.length-1)) {
+        event.preventDefault();
+        controls[event.shiftKey ? controls.length-1 : 0]?.focus();
+      }
+    }
+  });
 
   function settingsModal() {
     Sound.ui();
@@ -946,7 +1076,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 20</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 21</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -972,6 +1102,8 @@
 
   /* ---------- события ---------- */
   $('#btn-play').onclick = () => { Sound.ui(); nav('modes'); };
+  $('#btn-training').onclick = trainingMenu;
+  $('#btn-training-home').onclick = trainingMenu;
   $('#btn-shop').onclick = () => {
     Sound.ui();
     shopTab = 'yards';
@@ -980,7 +1112,9 @@
     syncTabs();
     nav('shop');
   };
-  $('#btn-wardrobe').onclick = () => { Sound.ui(); shopTab='outfits'; outfitEra=Yards.ballEra(); syncTabs(); nav('shop'); };
+  $('#btn-wardrobe').onclick = () => {
+    Sound.ui(); shopTab='outfits'; outfitTab='kits'; selectCurrentOutfitCollection(); syncTabs(); nav('shop');
+  };
   $('#btn-yards').onclick = () => { Sound.ui(); yardEditor(); };
   $('#btn-album').onclick = () => openAlbum();
   $('#btn-result-album').onclick = () => openAlbum('photos');
@@ -1009,19 +1143,22 @@
   };
   $$('[data-cup]').forEach(b => b.onclick = () => openCup(b.dataset.cup));
   $('#continue-cup').onclick = () => startMode(Cups.current().mode,true);
-  $('#btn-result-menu').onclick = () => { Sound.ui(); nav('modes'); };
+  $('#btn-result-menu').onclick = () => {
+    Sound.ui();
+    nav('modes');
+    if (matchOptions.practice) trainingMenu();
+  };
   $$('[data-nav]').forEach(b => b.onclick = () => { Sound.ui(); nav(b.dataset.nav); });
   $$('.mode-card').forEach(b => b.onclick = () => { Sound.ui(); playMode(b.dataset.mode); });
-  $$('.difficulty-btn').forEach(b => b.onclick = () => {
+  $$('[data-difficulty]').forEach(b => b.onclick = () => {
     Sound.ui(); difficulty = b.dataset.difficulty;
     Save.data.difficulty = difficulty; Save.save(); updateCompetition();
   });
-  $$('.opponents-btn').forEach(b => b.onclick = () => {
-    Sound.ui(); opponentCount = Number(b.dataset.opponents);
-    $$('.opponents-btn').forEach(x => x.classList.toggle('active', x === b));
-  });
   $$('.shop-tab').forEach(b => b.onclick = () => {
-    Sound.ui(); shopTab = b.dataset.tab; syncTabs(); renderShop();
+    Sound.ui();
+    shopTab = b.dataset.tab;
+    if (shopTab === 'outfits') selectCurrentOutfitCollection();
+    syncTabs(); renderShop();
   });
   $$('.outfit-era-btn').forEach(b => b.onclick = () => { outfitEra=b.dataset.outfitEra; renderShop(); });
   $$('[data-outfit-section]').forEach(b => b.onclick = () => {
@@ -1029,12 +1166,22 @@
     syncTabs();
     renderShop();
   });
-  $$('[data-country]').forEach(b => b.onclick = () => {
-    yardCountry = b.dataset.country;
-    yardEra = 'all';
-    syncTabs();
-    renderShop();
-  });
+  function countryButtons(container, names, change) {
+    for (const name of names) {
+      const button = document.createElement('button');
+      button.className = 'yard-era-btn';
+      button.dataset.country = name;
+      button.textContent = name || 'По эпохам';
+      button.onclick = () => {
+        change(name);
+        syncTabs();
+        renderShop();
+      };
+      $(container).appendChild(button);
+    }
+  }
+  countryButtons('#yard-country-filter',countries,name => { yardCountry = name; yardEra = 'all'; });
+  countryButtons('#outfit-country-filter',['',...Object.keys(Wardrobe.countries)],name => { outfitCountry = name; });
   $$('[data-season]').forEach(button => button.onclick = () => {
     const season = button.dataset.season;
     Save.data.yardSeason = season;
@@ -1055,7 +1202,7 @@
     $$('.shop-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === shopTab));
     $('#yard-country-filter').classList.toggle('hidden', shopTab !== 'yards');
     $('#yard-season-filter').classList.toggle('hidden', shopTab !== 'yards' || yardCountry !== 'Россия');
-    $$('[data-country]').forEach(b => {
+    $$('#yard-country-filter [data-country]').forEach(b => {
       const selected = b.dataset.country === yardCountry;
       b.classList.toggle('active', selected);
       b.setAttribute('aria-pressed', selected);
@@ -1070,7 +1217,13 @@
       b.classList.toggle('active', b.dataset.era === yardEra);
     });
     $('#yard-era-filter').classList.toggle('hidden', shopTab !== 'yards');
-    $('#outfit-era-filter').classList.toggle('hidden', shopTab !== 'outfits');
+    $('#outfit-country-filter').classList.toggle('hidden',shopTab !== 'outfits' || outfitTab !== 'kits');
+    $$('#outfit-country-filter [data-country]').forEach(b => {
+      const selected = b.dataset.country === outfitCountry;
+      b.classList.toggle('active',selected);
+      b.setAttribute('aria-pressed',selected);
+    });
+    $('#outfit-era-filter').classList.toggle('hidden', shopTab !== 'outfits' || (outfitTab === 'kits' && Boolean(outfitCountry)));
     $('#outfit-section-filter').classList.toggle('hidden', shopTab !== 'outfits');
     $('#test-catalog').classList.toggle('hidden', !Save.openCatalog);
     $$('[data-outfit-section]').forEach(b => {
@@ -1081,7 +1234,8 @@
   }
 
   window.addEventListener('resize', () => {
-    if (current !== 'match') nav(current);
+    if (current === 'match') fitMatchCanvas();
+    else if ($('#modal-wrap').classList.contains('hidden')) nav(current);
   });
 
   // Перерисовываем меню, когда фоновые изображения догрузились.
