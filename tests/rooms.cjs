@@ -22,10 +22,12 @@ async function setup(t) {
 
 test('American room waits for both players and awards the win after equally many turns', async t => {
   const { request, go } = await setup(t);
-  const a = (await request('',{mode:'am300'})).data;
+  const a = (await request('',{mode:'am300',outfit:'90-football'})).data;
   const path = '/'+a.room.code;
   assert.equal(a.room.phase,'lobby');
-  const b = (await request(path+'/join',{})).data;
+  const b = (await request(path+'/join',{outfit:'20-football'})).data;
+  assert.deepEqual(b.room.outfits,['90-football','90-street']);
+  assert.deepEqual((await request(path,undefined,a.token)).data.outfits,b.room.outfits);
   assert.equal(b.room.phase,'playing');
   assert.equal((await request(path,undefined,'invalid')).status,401);
   let room = b.room;

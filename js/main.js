@@ -423,9 +423,9 @@
     modal(`<h3>Мой двор</h3><canvas class="yard-editor-preview" id="yard-editor-preview" width="620" height="310"></canvas>
       <div class="editor-fields">
         <label>Эпоха<select id="edit-base">${YardEditor.bases.map(id => `<option value="${id}">${YARDS[id].era}</option>`).join('')}</select></label>
-        ${Object.entries(YardEditor.fields).map(([field,values]) => `<label>${editorLabels[field]}<select id="edit-${field}">
+        ${Object.entries(YardEditor.fields).filter(([field]) => field !== 'kit').map(([field,values]) => `<label>${editorLabels[field]}<select id="edit-${field}">
           ${Object.entries(values).map(([key,label]) => `<option value="${key}">${label}${YardEditor.available(field,key) ? '' : ' · набор'}</option>`).join('')}</select></label>`).join('')}
-      </div><p class="feature-status" role="status" id="yard-editor-status"></p>
+      </div><p class="feature-small">Одежда игрока выбирается в магазине → «Одежда».</p><p class="feature-status" role="status" id="yard-editor-status"></p>
       <div class="modal-actions"><button class="btn btn-paper" data-close>Закрыть</button><button class="btn btn-primary" id="save-yard">Выбрать двор</button></div>
       <div class="feature-stack"><button class="btn btn-paper" id="open-packs">Наборы оформления</button>
       <button class="btn btn-green" id="share-yard">Вызов в моём дворе</button></div>`);
@@ -437,13 +437,13 @@
         Yards.drawPlayer(ctx,canvas.width*.51,canvas.height*.91,.60,'#3f7fba','field',{moving:false});
         Yards.drawBall(ctx,canvas.width*.56,canvas.height*.90,9);
       });
-      const locked = Object.keys(YardEditor.fields).some(key => !YardEditor.available(key,t[key]));
+      const locked = Object.keys(YardEditor.fields).some(key => key !== 'kit' && !YardEditor.available(key,t[key]));
       $('#yard-editor-status').textContent = locked ? 'Предпросмотр. Для игры открой выбранный набор.' : 'Оформление не меняет правила игры.';
       $('#save-yard').disabled = locked;
       $('#share-yard').disabled = locked;
     }
     Object.keys(draft).forEach(key => {
-      const field = $('#edit-'+key); field.value = draft[key];
+      const field = $('#edit-'+key); if (!field) return; field.value = draft[key];
       field.onchange = () => { draft[key] = field.value; preview(); };
     });
     $('#save-yard').onclick = () => {
@@ -476,10 +476,81 @@
   /* ---------- магазин ---------- */
   let shopTab = 'yards';
   let yardEra = 'all';
+  let outfitEra = Yards.ballEra();
+
+  function paintOutfit(canvas, animate = false) {
+    const outfit = Wardrobe.catalog[canvas.dataset.outfit];
+    if (!outfit) return;
+    const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+    ctx.clearRect(0,0,w,h);
+    const bg = ctx.createLinearGradient(0,0,w,h);
+    bg.addColorStop(0,'#243341'); bg.addColorStop(1,'#141d27');
+    ctx.fillStyle=bg; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle='rgba(248,223,172,.2)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.ellipse(w/2,h-22,w*.3,10,0,0,Math.PI*2); ctx.stroke();
+    const phase=performance.now()/160;
+    const state=animate ? Math.floor(performance.now()/2200)%3 : 0;
+    const drawn=Wardrobe.draw(ctx,w/2,h-24,(h-55)/150,outfit.id,state===2 ? 'keeper' : 'field',
+      {moving:animate && state===0,kick:state===1,phase});
+    if (!drawn) {
+      ctx.fillStyle='#f0e6d2'; ctx.textAlign='center'; ctx.font='14px system-ui';
+      ctx.fillText(Wardrobe.load(outfit.era).failed ? 'Не удалось загрузить одежду' : 'Загружаем одежду…',w/2,h/2);
+    }
+  }
+  function outfitModal(id) {
+    const item=Wardrobe.catalog[id];
+    const owned=Wardrobe.owns(id);
+    modal(`<h3>${item.name}</h3><canvas class="outfit-fitting" data-outfit="${id}" width="300" height="230"></canvas>
+      <p>${item.description}</p><p class="feature-small">${item.style} · ${Wardrobe.eras[item.era]}. Бег, удар и игра в воротах в одном комплекте.</p>
+      <p class="feature-status" role="status" id="outfit-status">${owned ? 'Комплект уже доступен.' : 'Цена: '+item.price+' игровых жетонов. Деньги не списываются.'}</p>
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button>
+      <button class="btn btn-primary" id="equip-outfit">${owned ? 'Надеть' : 'Купить · 🪙 '+item.price}</button></div>`);
+    const preview=$('#modal-box .outfit-fitting');
+    function frame() {
+      if (!preview.isConnected || $('#modal-wrap').classList.contains('hidden')) return;
+      paintOutfit(preview,true); requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    $('#equip-outfit').onclick=() => {
+      if (!Wardrobe.buy(id)) {
+        $('#outfit-status').textContent=`Не хватает ${Math.max(0,item.price-Save.data.coins)} жетонов. Их можно заработать в матчах.`;
+        return;
+      }
+      Sound.ui(); closeModal(); updateCoins(); renderShop();
+    };
+  }
+  function renderOutfits(list) {
+    const note=document.createElement('p'); note.className='ball-set-note outfit-note';
+    note.textContent='Дворовая одежда бесплатна. Форма за жетоны. Выбор сохраняется для каждого десятилетия.';
+    list.appendChild(note);
+    const play=document.createElement('button'); play.className='btn btn-green';
+    play.textContent='Играть во дворе · '+Wardrobe.eras[outfitEra];
+    play.onclick=() => {
+      if (Yards.ballEra()!==outfitEra) Save.data.selectedYard='ru'+outfitEra+'_1';
+      Yards.syncBallToYard(); nav('modes');
+    };
+    list.appendChild(play);
+    Wardrobe.list(outfitEra).forEach(item => {
+      const selected=Wardrobe.selected(outfitEra).id===item.id;
+      const card=document.createElement('div'); card.className='shop-card outfit-card';
+      card.innerHTML=`<canvas class="outfit-preview" data-outfit="${item.id}" width="300" height="220"></canvas>
+        <div class="shop-card-body"><div class="shop-card-title">${item.name}</div>
+        <div class="outfit-category">${item.style} · ${Wardrobe.eras[item.era]} ${selected ? '· ✓ Надет' : ''}</div>
+        <div class="shop-card-desc">${item.description}</div>
+        <div class="shop-card-actions"><button class="btn btn-paper">${selected ? 'Посмотреть в движении' : Wardrobe.owns(item.id) ? 'Примерить и надеть' : 'Примерить · 🪙 '+item.price}</button></div></div>`;
+      card.querySelector('button').onclick=() => outfitModal(item.id);
+      list.appendChild(card); paintOutfit(card.querySelector('canvas'));
+    });
+    $$('.outfit-era-btn').forEach(b => {
+      b.classList.toggle('active',b.dataset.outfitEra===outfitEra);
+      b.setAttribute('aria-pressed',b.dataset.outfitEra===outfitEra);
+    });
+  }
 
   function renderShop() {
     const list = $('#shop-list');
     list.innerHTML = '';
+    if (shopTab === 'outfits') { renderOutfits(list); return; }
     if (shopTab === 'yards') {
       Object.values(YARDS).filter(y =>
         (y.era || y.id === 'classic' || y.id === Save.data.selectedYard) &&
@@ -588,7 +659,7 @@
       closeModal();
       renderShop(); paintBg('#shop-bg');
       modal(`<h3>Двор твой! 🎉</h3>
-        <p>«${y.name}» куплен и уже выбран. Друзья в твоей комнате смогут играть на нём бесплатно.</p>
+        <p>«${y.name}» разблокирован и уже выбран. Можно переходить к матчу.</p>
         <div class="modal-actions"><button class="btn btn-green" data-close>Сыграть</button></div>`,
         () => nav('modes'));
     };
@@ -617,15 +688,15 @@
     const s = Save.data.settings;
     modal(`
       <h3>Настройки</h3>
-      <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound"></button></div>
-      <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro"></button></div>
+      <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
+      <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 15</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 16</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
-    $('#tg-sound').onclick = e => { s.sound = !s.sound; Save.save(); e.target.classList.toggle('on', s.sound); };
-    $('#tg-vibro').onclick = e => { s.vibro = !s.vibro; Save.save(); e.target.classList.toggle('on', s.vibro); };
+    $('#tg-sound').onclick = e => { s.sound = !s.sound; Save.save(); e.target.classList.toggle('on', s.sound); e.target.setAttribute('aria-checked',s.sound); };
+    $('#tg-vibro').onclick = e => { s.vibro = !s.vibro; Save.save(); e.target.classList.toggle('on', s.vibro); e.target.setAttribute('aria-checked',s.vibro); };
     $('#btn-update-game').onclick = () => {
       const url = new URL(window.location.href);
       url.searchParams.set('v', Date.now().toString());
@@ -647,6 +718,7 @@
   /* ---------- события ---------- */
   $('#btn-play').onclick = () => { Sound.ui(); nav('modes'); };
   $('#btn-shop').onclick = () => { Sound.ui(); shopTab = 'yards'; syncTabs(); nav('shop'); };
+  $('#btn-wardrobe').onclick = () => { Sound.ui(); shopTab='outfits'; outfitEra=Yards.ballEra(); syncTabs(); nav('shop'); };
   $('#btn-yards').onclick = () => { Sound.ui(); yardEditor(); };
   $('#btn-daily').onclick = () => activityModal(Activities.daily());
   $('#btn-online').onclick = () => onlineLobby();
@@ -687,6 +759,7 @@
   $$('.shop-tab').forEach(b => b.onclick = () => {
     Sound.ui(); shopTab = b.dataset.tab; syncTabs(); renderShop();
   });
+  $$('.outfit-era-btn').forEach(b => b.onclick = () => { outfitEra=b.dataset.outfitEra; renderShop(); });
   $$('.yard-era-btn').forEach(b => b.onclick = () => {
     Sound.ui(); yardEra = b.dataset.era;
     $$('.yard-era-btn').forEach(x => x.classList.toggle('active', x === b));
@@ -695,6 +768,7 @@
   function syncTabs() {
     $$('.shop-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === shopTab));
     $('#yard-era-filter').classList.toggle('hidden', shopTab !== 'yards');
+    $('#outfit-era-filter').classList.toggle('hidden', shopTab !== 'outfits');
   }
 
   window.addEventListener('resize', () => {
@@ -705,6 +779,9 @@
   window.addEventListener('art-ready', () => {
     artRevision++;
     if (current !== 'match') nav(current);
+  });
+  window.addEventListener('wardrobe-ready', () => {
+    $$('#shop-list canvas[data-outfit]').forEach(c => paintOutfit(c));
   });
 
   document.addEventListener('visibilitychange', () => {

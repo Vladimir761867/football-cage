@@ -12,10 +12,10 @@ function runtime(storage = new Map()) {
     Sound: new Proxy({}, { get: () => () => {} }),
     Math: Object.assign(Object.create(Math), { random: () => .5 })
   });
-  for (const file of ['save', 'competition', 'activity', 'shot-rules', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
+  for (const file of ['save', 'wardrobe', 'competition', 'activity', 'shot-rules', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js', file + '.js'), 'utf8'), context);
   }
-  return vm.runInContext('({Save,Difficulty,Cups,Activities,YardEditor,ShotRules,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
+  return vm.runInContext('({Save,Wardrobe,Difficulty,Cups,Activities,YardEditor,ShotRules,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
 }
 function env() {
   return { W: 520, H: 1125, difficulty: 'normal', opponentCount: 3, gesture: {},
@@ -182,4 +182,55 @@ test('friend links preserve fixtures and reject invalid dates or custom field va
   assert.equal(Activities.fromLink(new URLSearchParams('challenge=2026-02-31.targets')),null);
   const a = Activities.random(c.key), b = Activities.random(c.key);
   assert.deepEqual([a(),a(),a()],[b(),b(),b()]);
+});
+
+test('wardrobe offers free everyday clothes in every era and purchases charge once', () => {
+  const storage=new Map();
+  const {Wardrobe,Save}=runtime(storage);
+  for (const era of ['80','90','00','10','20']) {
+    assert.equal(Wardrobe.list(era).length,2);
+    assert.equal(Wardrobe.selected(era).id,era+'-street');
+    assert.equal(Wardrobe.owns(era+'-street'),true);
+    assert.equal(Wardrobe.equip(era+'-football'),false);
+  }
+  Save.data.coins=119;
+  assert.equal(Wardrobe.buy('80-football'),false);
+  assert.equal(Save.data.coins,119);
+  Save.data.coins=240;
+  assert.equal(Wardrobe.buy('80-football'),true);
+  assert.equal(Wardrobe.buy('80-football'),true);
+  assert.equal(Save.data.coins,120);
+  assert.equal(Wardrobe.buy('20-football'),true);
+  assert.equal(Save.data.coins,0);
+  const restored=runtime(storage);
+  assert.equal(restored.Wardrobe.selected('80').id,'80-football');
+  assert.equal(restored.Wardrobe.selected('20').id,'20-football');
+  assert.equal(restored.Wardrobe.selected('90').id,'90-street');
+  Wardrobe.equip('80-street');
+  assert.equal(Wardrobe.owns('80-football'),true);
+});
+
+test('keeper wears the same owned outfit and a challenge uses its own yard era', () => {
+  const {Wardrobe,Save,Yards,YARDS}=runtime();
+  Save.data.coins=120; Wardrobe.buy('80-football');
+  Save.data.selectedYard='ru80_1';
+  const calls=[];
+  Wardrobe.draw=(ctx,x,y,s,id,pose) => {calls.push({id,pose}); return true;};
+  const ctx=new Proxy({}, {get:()=>()=>{}});
+  Yards.drawPlayer(ctx,50,50,1,'#3f7fba','field',{});
+  Yards.drawPlayer(ctx,50,50,1,'#caa23c','keeper',{me:true,dive:1});
+  assert.equal(calls[0].id,'80-football');
+  assert.equal(calls[1].id,'80-football');
+  Yards.withScene(YARDS.ru20_1,()=>Yards.drawPlayer(ctx,50,50,1,'#3f7fba','field',{}));
+  assert.equal(calls[2].id,'20-street');
+  assert.equal(Wardrobe.selected('80').id,'80-football');
+});
+
+test('quick duel results describe five attempts even when the winner scores below 300', () => {
+  const {Am300Mode}=runtime();
+  let result;
+  const mode=new Am300Mode({...env(),quick:true,opponentCount:1,finish:r=>{result=r;}});
+  mode.you=25; mode._finish(true);
+  assert.match(result.sub,/пять ударов/);
+  assert.doesNotMatch(result.sub,/300/);
 });

@@ -769,6 +769,14 @@ const Yards = (() => {
 
   /* ---------- игрок (силуэт) ---------- */
   function drawPlayer(ctx, x, y, s, color, pose, motion) {
+    const me = motion?.me ?? color === '#3f7fba';
+    const era = ballEra();
+    const outfit = motion?.outfit || (me ? Wardrobe.selected(era).id : era + (color === '#c0392b' || color === '#d25743' ? '-football' : '-street'));
+    if (me) {
+      ctx.save(); ctx.strokeStyle='#a3ec75'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(x,y+2,19*s,6*s,0,0,Math.PI*2); ctx.stroke(); ctx.restore();
+    }
+    if (Wardrobe.draw(ctx,x,y,s*.74,outfit,pose,motion || {})) return;
     if (color === '#3f7fba' && pose !== 'keeper' && theme().custom) {
       color = {red:'#c0392b',green:'#7a9f4b',blue:color}[theme().custom.kit];
     }

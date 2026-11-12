@@ -302,7 +302,7 @@ class CrossMode {
       Yards.drawPlayer(ctx, p.x, p.y, s,
         keeper ? '#caa23c' : ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i],
         keeper ? 'keeper' : 'field',
-        { phase: p.phase, moving: Math.hypot(p.tx - p.x, p.ty - p.y) > 3,
+        { me:i === 0, phase: p.phase, moving: Math.hypot(p.tx - p.x, p.ty - p.y) > 3,
           face, dive: keeper ? this.dive : 0,
           kick: (this.state === 'shot' && i === this.shooterIndex) || p.kickT > 0 ? (p.kickT > 0 ? Math.min(1, 1.01 - p.kickT / .25) : true) : false,
           celebrate: inWait && this._lastGoal && i === this._lastShooter,

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261112-15b">
+<link rel="stylesheet" href="css/style.css?v=20261112-16">
 </head>
 <body>
 <div id="app">
@@ -31,7 +31,10 @@
           <button class="btn btn-paper" id="btn-shop">🛒 Магазин</button>
           <button class="btn btn-paper" id="btn-yards">🏠 Мой двор</button>
         </div>
-        <button class="btn btn-paper" id="btn-online">Играть с друзьями</button>
+        <div class="home-row">
+          <button class="btn btn-paper" id="btn-wardrobe">👕 Одежда</button>
+          <button class="btn btn-paper" id="btn-online">С друзьями</button>
+        </div>
       </div>
       <div class="fair-note">🧢 Косметика — только стиль. На игру не влияет.</div>
     </div>
@@ -150,6 +153,7 @@
       <div class="shop-tabs">
         <button class="shop-tab active" data-tab="yards">🏠 Дворы</button>
         <button class="shop-tab" data-tab="balls">⚽ Мячи</button>
+        <button class="shop-tab" data-tab="outfits">👕 Одежда</button>
       </div>
       <div class="yard-era-filter" id="yard-era-filter">
         <button class="yard-era-btn active" data-era="all">Все</button>
@@ -158,6 +162,13 @@
         <button class="yard-era-btn" data-era="2000-е">2000-е</button>
         <button class="yard-era-btn" data-era="2010-е">2010-е</button>
         <button class="yard-era-btn" data-era="2020-е">2020-е</button>
+      </div>
+      <div class="yard-era-filter hidden" id="outfit-era-filter" aria-label="Десятилетие одежды">
+        <button class="outfit-era-btn" data-outfit-era="80">80-е</button>
+        <button class="outfit-era-btn" data-outfit-era="90">90-е</button>
+        <button class="outfit-era-btn" data-outfit-era="00">2000-е</button>
+        <button class="outfit-era-btn" data-outfit-era="10">2010-е</button>
+        <button class="outfit-era-btn" data-outfit-era="20">2020-е</button>
       </div>
       <div class="shop-list" id="shop-list"></div>
       <div class="fair-note">Все предметы — косметика. Физика мяча и правила одинаковы для всех.</div>
@@ -170,19 +181,20 @@
   </div>
 
 </div>
-<script src="js/sound.js?v=20261112-15b"></script>
-<script src="js/save.js?v=20261112-15b"></script>
-<script src="js/competition.js?v=20261112-15b"></script>
-<script src="js/activity.js?v=20261112-15b"></script>
-<script src="js/shot-rules.js?v=20261112-15b"></script>
-<script src="js/room-rules.js?v=20261112-15b"></script>
-<script src="js/yards.js?v=20261112-15b"></script>
-<script src="js/gesture.js?v=20261112-15b"></script>
-<script src="js/mode_dog.js?v=20261112-15b"></script>
-<script src="js/mode_square.js?v=20261112-15b"></script>
-<script src="js/mode_am300.js?v=20261112-15b"></script>
-<script src="js/mode_cross.js?v=20261112-15b"></script>
-<script src="js/online.js?v=20261112-15b"></script>
-<script src="js/main.js?v=20261112-15b"></script>
+<script src="js/sound.js?v=20261112-16"></script>
+<script src="js/save.js?v=20261112-16"></script>
+<script src="js/wardrobe.js?v=20261112-16"></script>
+<script src="js/competition.js?v=20261112-16"></script>
+<script src="js/activity.js?v=20261112-16"></script>
+<script src="js/shot-rules.js?v=20261112-16"></script>
+<script src="js/room-rules.js?v=20261112-16"></script>
+<script src="js/yards.js?v=20261112-16"></script>
+<script src="js/gesture.js?v=20261112-16"></script>
+<script src="js/mode_dog.js?v=20261112-16"></script>
+<script src="js/mode_square.js?v=20261112-16"></script>
+<script src="js/mode_am300.js?v=20261112-16"></script>
+<script src="js/mode_cross.js?v=20261112-16"></script>
+<script src="js/online.js?v=20261112-16"></script>
+<script src="js/main.js?v=20261112-16"></script>
 </body>
 </html>

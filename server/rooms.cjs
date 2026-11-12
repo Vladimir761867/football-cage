@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const { randomBytes } = require('node:crypto');
 const field = require('../js/room-rules.js');
 const shots = require('../js/shot-rules.js');
+const wardrobe = require('../js/wardrobe.js');
 
 const root = path.join(__dirname,'..');
 const contentTypes = {
@@ -23,7 +24,7 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
     code:room.code, mode:room.mode, phase:room.phase, seats:room.players.map(Boolean),
     capacity:room.capacity, version:room.version, turn:room.turn, scores:room.scores,
     attempts:room.attempts, turnReadyAt:room.turnReadyAt, deadline:room.deadline, serverNow:now(),
-    last:room.last, winner:room.winner
+    last:room.last, winner:room.winner, outfits:room.outfits
   });
   const turnDelay = room => room.mode === 'square' ? 5600 : 16000;
 
@@ -103,11 +104,12 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
     if (!token || seat < 0) throw error(401,'Войди в комнату заново');
     return seat;
   }
-  function addPlayer(room) {
+  function addPlayer(room, outfit) {
     const seat = room.players.indexOf(null);
     if (seat < 0 || room.phase !== 'lobby') throw error(409,'Комната заполнена или матч уже начался');
     const token = randomBytes(24).toString('hex');
     room.players[seat] = token;
+    room.outfits[seat] = wardrobe.roomOutfit(outfit);
     room.version++;
     if (room.players.every(Boolean)) {
       room.phase = 'playing';
@@ -163,22 +165,22 @@ function createServer({now = Date.now, random = Math.random, origin = process.en
       prune(time); limit(req,time);
       if (pathname === '/api/health' && req.method === 'GET') { send(200,{version:1}); return; }
       if (pathname === '/api/rooms' && req.method === 'POST') {
-        const {mode} = await read(req);
+        const {mode,outfit} = await read(req);
         if (!['square','am300'].includes(mode)) throw error(400,'Выбери режим комнаты');
         if (rooms.size >= 500) throw error(503,'Все комнаты заняты');
         let code;
         do { code = randomBytes(3).toString('hex').toUpperCase(); } while (rooms.has(code));
         const capacity = mode === 'am300' ? 2 : 4;
         const room = { code, mode, capacity, phase:'lobby', players:Array(capacity).fill(null),
-          scores:Array(capacity).fill(0), attempts:Array(capacity).fill(0),
+          scores:Array(capacity).fill(0), attempts:Array(capacity).fill(0), outfits:Array(capacity).fill('90-street'),
           version:0, touched:time, turn:0, turnReadyAt:0, deadline:0, last:null, winner:null };
         rooms.set(code,room);
-        send(201,addPlayer(room)); return;
+        send(201,addPlayer(room,outfit)); return;
       }
       const [, , , code, action] = pathname.split('/');
       const room = codes.test(code || '') && rooms.get(code);
       if (!room || !/^\/api\/rooms\/[A-F0-9]{6}(\/(join|play|leave))?$/.test(pathname)) throw error(404,'Комната не найдена');
-      if (action === 'join' && req.method === 'POST') { room.touched = time; send(200,addPlayer(room)); return; }
+      if (action === 'join' && req.method === 'POST') { const data=await read(req); room.touched = time; send(200,addPlayer(room,data.outfit)); return; }
       const seat = membership(req,room);
       room.touched = time;
       if (!action && req.method === 'GET') { advanceClock(room,time); send(200,snapshot(room)); return; }

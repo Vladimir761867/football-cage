@@ -331,7 +331,7 @@ class DogMode {
           ctx.beginPath(); ctx.ellipse(n.x, n.y + 3 * s, 32 * s, 12 * s, 0, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2); ctx.stroke();
         }
         Yards.drawPlayer(ctx, n.x, n.y, s, i === 0 ? '#3f7fba' : i % 2 ? '#c0392b' : '#7a9f4b', 'field',
-          { phase: n.phase, moving: false, face: n.face,
+          { me:i === 0 && !this.youDog, phase: n.phase, moving: false, face: n.face,
             kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .22) : false });
         ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
         ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
@@ -347,7 +347,7 @@ class DogMode {
         const s = this._scaleAt(v);
         ctx.fillStyle = 'rgba(255,152,72,.9)';
         ctx.beginPath(); ctx.ellipse(d.x, d.y + 3, 9 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
-        Yards.drawPlayer(ctx, d.x, d.y, s, '#d25743', 'field', { phase: d.phase, moving: d.moving, face: d.face });
+        Yards.drawPlayer(ctx, d.x, d.y, s, '#d25743', 'field', { me:this.youDog && it.i === 0, phase: d.phase, moving: d.moving, face: d.face });
         if (this.youDog && it.i === 0) {
           ctx.fillStyle = '#9bf36a'; ctx.font = '800 13px Rubik'; ctx.textAlign = 'center';
           ctx.fillText('ТЫ', d.x, d.y + 18);

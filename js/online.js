@@ -60,8 +60,9 @@ const OnlineRooms = {
         } catch { /* previous seat no longer available */ }
       }
     }
-    const data = code ? await this.request(origin,'/'+code+'/join',{body:{}})
-      : await this.request(origin,'',{body:{mode}});
+    const outfit = Wardrobe.selected('90').id;
+    const data = code ? await this.request(origin,'/'+code+'/join',{body:{outfit}})
+      : await this.request(origin,'',{body:{mode,outfit}});
     this.check(data.room);
     if (!/^[a-f0-9]{48}$/.test(data.token) || !Number.isInteger(data.seat) || !data.room.seats[data.seat]) {
       throw new Error('Сервер не подтвердил место в комнате');
@@ -204,7 +205,7 @@ class OnlineMode {
         ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(p.x,p.y,23,8,0,0,7); ctx.stroke();
       }
       Yards.drawPlayer(ctx,p.x,p.y,square ? .71 : .88,colors[i],'field',
-        { moving:false, kick:elapsed<.4 && this.animate?.seat===i });
+        { me:i===this.seat, outfit:Wardrobe.roomOutfit(this.room.outfits?.[i]), moving:false, kick:elapsed<.4 && this.animate?.seat===i });
       ctx.fillStyle = '#fff3d4'; ctx.font = '800 13px Rubik'; ctx.textAlign = 'center';
       ctx.fillText(i === this.seat ? 'ТЫ' : i+1,p.x,p.y+20);
     }

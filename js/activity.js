@@ -95,8 +95,8 @@ const YardEditor = {
     prop: { none: 'Без деталей', bench: 'Лавка', lamp: 'Фонарь', flags: 'Флажки' }
   },
   packs: {
-    evening: { title: 'Вечер после дождя', price: 199, items: { surface: 'wet', frame: 'retro', light: 'warm', kit: 'red', prop: 'lamp' } },
-    floodlights: { title: 'Под прожекторами', price: 199, items: { surface: 'turf', frame: 'blue', light: 'dusk', kit: 'green', prop: 'flags' } }
+    evening: { title: 'Вечер после дождя', price: 199, items: { surface: 'wet', frame: 'retro', light: 'warm', prop: 'lamp' } },
+    floodlights: { title: 'Под прожекторами', price: 199, items: { surface: 'turf', frame: 'blue', light: 'dusk', prop: 'flags' } }
   },
   clean(data = {}) {
     const result = { base: this.bases.includes(data.base) ? data.base : 'ru90_1' };

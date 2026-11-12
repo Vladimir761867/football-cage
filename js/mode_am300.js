@@ -375,7 +375,7 @@ class Am300Mode {
       won, draw,
       title: !this.opponents.length ? 'Серия окончена' : draw ? 'Ничья' : won ? 'Победа!' : 'Соперник оказался точнее',
       score: this.opponents.length ? `${this.you} : ${top}` : `${this.you} очк.`,
-      sub: !this.opponents.length ? 'Удары по раме и углам' : won ? `Ты первым дошёл до 300 (${this.round} кр.)` : 'Целься в перекладину и девятку',
+      sub: !this.opponents.length ? 'Удары по раме и углам' : this.env.quick ? 'По пять ударов каждому · победа по сумме очков' : won ? `Ты первым дошёл до 300 (${this.round} кр.)` : 'Целься в перекладину и девятку',
       moment: this.bestMoment ? '★ Лучший удар: ' + this.bestMoment : '',
       coins, newBest
     });
