@@ -1,0 +1,7 @@
+html{color-scheme:dark;background:#1b1f27;color:#fff4df;font:17px/1.6 system-ui,sans-serif}
+body{margin:0}
+main{max-width:720px;margin:auto;padding:24px 20px 36px}
+h1,h2{line-height:1.2}
+a{color:#ffcb75;text-underline-offset:3px}
+a:focus-visible{outline:3px solid #ffcb75;outline-offset:3px}
+section{margin-top:32px;border-top:1px solid #847762;padding-top:8px}

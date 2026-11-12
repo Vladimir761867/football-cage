@@ -198,7 +198,7 @@ function createServer({now = Date.now, random = Math.random, yardFile,
   }
   function staticFile(req,res,pathname) {
     const route = pathname === '/' ? '/index.html' : pathname;
-    if (req.method !== 'GET' || !/^\/(index\.html|(?:js|css|assets)\/[a-zA-Z0-9_.-]+)$/.test(route)) {
+    if (req.method !== 'GET' || !/^\/((?:index|privacy)\.html|(?:js|css|assets)\/[a-zA-Z0-9_.-]+)$/.test(route)) {
       throw error(404,'Страница не найдена');
     }
     const type = contentTypes[path.extname(route)];
@@ -206,6 +206,12 @@ function createServer({now = Date.now, random = Math.random, yardFile,
     const file = path.join(root,route.slice(1));
     const stat = fs.statSync(file,{throwIfNoEntry:false});
     if (!stat?.isFile()) throw error(404,'Файл не найден');
+    if (route === '/index.html') {
+      const html = fs.readFileSync(file,'utf8').replace('name="football-online" content="off"','name="football-online" content="on"');
+      res.writeHead(200,{'Content-Type':type,'Content-Length':Buffer.byteLength(html),'Cache-Control':'no-cache'});
+      res.end(html);
+      return;
+    }
     res.writeHead(200,{'Content-Type':type,'Content-Length':stat.size,'Cache-Control':route.startsWith('/assets/') ? 'public, max-age=3600' : 'no-cache'});
     const stream = fs.createReadStream(file);
     stream.on('error',() => res.destroy());

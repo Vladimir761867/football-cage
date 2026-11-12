@@ -2,15 +2,17 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1b1f27">
 <title>Дворовый футбол</title>
 <meta name="description" content="Дворовый футбол на телефоне. Собачка, Квадрат, Американка, Навес и тренировка ударов.">
 <meta name="football-rooms-origin" content="">
+<meta name="football-online" content="off">
+<meta name="football-platform" content="web">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261112-22">
+<link rel="stylesheet" href="css/style.css?v=20261112-23">
 </head>
 <body>
 <div id="app">
@@ -33,12 +35,12 @@
           <button class="btn btn-paper" id="btn-training-home">Тренировка</button>
         </div>
         <div class="home-row">
-          <button class="btn btn-paper" id="btn-shop">🛒 Магазин</button>
+          <button class="btn btn-paper" id="btn-shop">🧢 Коллекции</button>
           <button class="btn btn-paper" id="btn-yards">🏠 Мой двор</button>
         </div>
         <div class="home-row">
           <button class="btn btn-paper" id="btn-wardrobe">👕 Одежда</button>
-          <button class="btn btn-paper" id="btn-online">С друзьями</button>
+          <button class="btn btn-paper" id="btn-online" hidden>С друзьями</button>
         </div>
         <button class="btn btn-paper" id="btn-album">📷 Альбом и нашивки</button>
       </div>
@@ -106,19 +108,25 @@
 
   <!-- МАТЧ -->
   <section class="screen hidden" id="screen-match">
-    <canvas id="match-canvas"></canvas>
     <div class="match-hud">
       <div class="match-hud-top">
-        <button class="icon-btn" id="btn-pause">⏸</button>
+        <button class="icon-btn" id="btn-pause" aria-label="Пауза">⏸</button>
         <div class="paper-title paper-title-sm" id="match-title">Квадрат</div>
         <div class="hud-timer" id="match-timer"></div>
       </div>
       <div class="hud-score-row" id="match-score-row"></div>
-      <div class="match-hint" id="match-hint"></div>
+      <div class="match-status">
+        <div class="match-hint" id="match-hint"></div>
+        <div class="match-toast" id="match-toast" role="status" aria-live="polite"></div>
+      </div>
     </div>
-    <div class="match-choices hidden" id="match-choices"></div>
-    <button class="btn btn-paper lesson-skip hidden" id="btn-skip-lesson">Пропустить обучение</button>
-    <div class="match-toast" id="match-toast"></div>
+    <div class="match-arena" id="match-arena">
+      <canvas id="match-canvas" aria-label="Игровое поле"></canvas>
+    </div>
+    <div class="match-actions" id="match-actions" hidden>
+      <div class="match-choices hidden" id="match-choices"></div>
+      <button class="btn btn-paper lesson-skip hidden" id="btn-skip-lesson">Пропустить обучение</button>
+    </div>
   </section>
 
   <!-- ИТОГ МАТЧА -->
@@ -149,7 +157,7 @@
     <div class="screen-inner">
       <div class="top-bar">
         <button class="icon-btn" data-nav="home">←</button>
-        <div class="paper-title">Магазин</div>
+        <div class="paper-title">Коллекции</div>
         <div class="coins-chip coins-small" id="shop-coins">🪙 <b>0</b></div>
       </div>
       <div class="shop-tabs">
@@ -158,7 +166,7 @@
         <button class="shop-tab" data-tab="outfits">👕 Одежда</button>
         <button class="shop-tab" data-tab="effects">✨ Голы</button>
       </div>
-      <p class="test-catalog hidden" id="test-catalog">Тестовый доступ · весь каталог открыт</p>
+      <p class="test-catalog" id="test-catalog">Все предметы доступны бесплатно</p>
       <div class="yard-country-filter hidden" id="outfit-section-filter" aria-label="Вид одежды">
         <button class="yard-era-btn active" data-outfit-section="kits" aria-pressed="true">Комплекты</button>
         <button class="yard-era-btn" data-outfit-section="shoes" aria-pressed="false">Обувь</button>
@@ -196,21 +204,21 @@
 
 </div>
 <script src="js/sound.js?v=20261112-16"></script>
-<script src="js/save.js?v=20261112-22"></script>
-<script src="js/collections.js?v=20261112-22"></script>
-<script src="js/wardrobe.js?v=20261112-22"></script>
-<script src="js/competition.js?v=20261112-22"></script>
-<script src="js/activity.js?v=20261112-22"></script>
-<script src="js/shot-rules.js?v=20261112-22"></script>
-<script src="js/room-rules.js?v=20261112-22"></script>
-<script src="js/yards.js?v=20261112-22"></script>
-<script src="js/gesture.js?v=20261112-22"></script>
-<script src="js/mode_dog.js?v=20261112-22"></script>
-<script src="js/mode_square.js?v=20261112-22"></script>
-<script src="js/mode_am300.js?v=20261112-22"></script>
-<script src="js/mode_cross.js?v=20261112-22"></script>
-<script src="js/online.js?v=20261112-22"></script>
-<script src="js/i18n.js?v=20261112-22"></script>
-<script src="js/main.js?v=20261112-22"></script>
+<script src="js/save.js?v=20261112-23"></script>
+<script src="js/collections.js?v=20261112-23"></script>
+<script src="js/wardrobe.js?v=20261112-23"></script>
+<script src="js/competition.js?v=20261112-23"></script>
+<script src="js/activity.js?v=20261112-23"></script>
+<script src="js/shot-rules.js?v=20261112-23"></script>
+<script src="js/room-rules.js?v=20261112-23"></script>
+<script src="js/yards.js?v=20261112-23"></script>
+<script src="js/gesture.js?v=20261112-23"></script>
+<script src="js/mode_dog.js?v=20261112-23"></script>
+<script src="js/mode_square.js?v=20261112-23"></script>
+<script src="js/mode_am300.js?v=20261112-23"></script>
+<script src="js/mode_cross.js?v=20261112-23"></script>
+<script src="js/online.js?v=20261112-23"></script>
+<script src="js/i18n.js?v=20261112-23"></script>
+<script src="js/main.js?v=20261112-23"></script>
 </body>
 </html>

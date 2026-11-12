@@ -1,0 +1,76 @@
+plugins {
+    id 'com.android.application'
+}
+
+def signingVars = [
+    'FOOTBALL_KEYSTORE', 'FOOTBALL_STORE_PASSWORD', 'FOOTBALL_KEY_ALIAS', 'FOOTBALL_KEY_PASSWORD'
+].collectEntries { name -> [(name): providers.environmentVariable(name).orNull] }
+def hasReleaseKey = signingVars.values().every { it }
+
+android {
+    namespace 'io.github.vladimir761867.footballcage'
+    compileSdk 36
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'io.github.vladimir761867.footballcage'
+        minSdk 26
+        targetSdk 36
+        versionCode 23
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            owner {
+                storeFile file(signingVars.FOOTBALL_KEYSTORE)
+                storePassword signingVars.FOOTBALL_STORE_PASSWORD
+                keyAlias signingVars.FOOTBALL_KEY_ALIAS
+                keyPassword signingVars.FOOTBALL_KEY_PASSWORD
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (hasReleaseKey) signingConfig signingConfigs.owner
+        }
+        qa {
+            initWith release
+            applicationIdSuffix '.qa'
+            versionNameSuffix '-qa'
+            signingConfig signingConfigs.debug
+            resValue 'string', 'app_name', 'Дворовый футбол QA'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+def stagedAssets = layout.buildDirectory.dir('generated/game-assets')
+def stageGame = tasks.register('stageGame', Sync) {
+    into stagedAssets.map { it.dir('web') }
+    from(rootProject.projectDir.parentFile) {
+        include 'index.html', 'privacy.html', 'css/**', 'js/**', 'assets/**'
+        filesMatching('index.html') {
+            filter { line ->
+                if (line.contains('https://fonts.googleapis.com') || line.contains('https://fonts.gstatic.com')) return null
+                line.replace('name="football-platform" content="web"', 'name="football-platform" content="android"')
+                    .replaceAll(/<meta name="football-rooms-origin" content="[^"]*">/, '<meta name="football-rooms-origin" content="">')
+            }
+        }
+    }
+    filteringCharset = 'UTF-8'
+}
+android.sourceSets.main.assets.srcDir(stagedAssets)
+tasks.named('preBuild').configure { dependsOn(stageGame) }
+
+tasks.register('storeRelease') {
+    group = 'build'
+    description = 'Builds the owner-signed AAB and APK for the stores.'
+    doFirst {
+        if (!hasReleaseKey) throw new GradleException('Configure the four FOOTBALL_* signing variables first.')
+    }
+    if (hasReleaseKey) dependsOn('bundleRelease', 'assembleRelease')
+}

@@ -1,1 +1,8 @@
 /data/
+/work/android-toolchain/
+/work/android-build/
+/android/.gradle/
+/android/**/build/
+/android/local.properties
+*.jks
+*.keystore

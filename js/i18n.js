@@ -11,6 +11,10 @@ const I18n = (() => {
 Вызов дня|Daily challenge|Reto diario|每日挑战|Desafio diário|दैनिक चुनौती
 Тренировка|Practice|Entrenamiento|训练|Treino|अभ्यास
 Магазин|Shop|Tienda|商店|Loja|दुकान
+Коллекции|Collections|Colecciones|收藏|Coleções|संग्रह
+Все предметы доступны бесплатно|All items are free|Todos los artículos son gratis|所有物品均免费|Todos os itens são gratuitos|सभी आइटम मुफ़्त हैं
+Политика конфиденциальности|Privacy policy|Política de privacidad|隐私政策|Política de privacidade|गोपनीयता नीति
+Игровое поле|Playing field|Cancha de juego|比赛场地|Campo de jogo|खेल का मैदान
 Мой двор онлайн|My online court|Mi cancha en línea|我的在线球场|Minha quadra online|मेरा ऑनलाइन मैदान
 Мой двор|My court|Mi cancha|我的球场|Minha quadra|मेरा मैदान
 Одежда|Clothing|Ropa|服装|Roupas|कपड़े

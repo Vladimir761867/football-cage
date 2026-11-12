@@ -20,7 +20,9 @@
   let lastGoal = null;
   let refreshYardPreview = null;
   let refreshAlbum = null;
-  let modalFocus = null, modalDismiss = null;
+  let modalFocus = null, modalDismiss = null, modalScreen = null;
+  const nativeAndroid = $('meta[name="football-platform"]')?.content === 'android';
+  let roomsAvailable = !nativeAndroid && $('meta[name="football-online"]')?.content === 'on';
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const countries = [...new Set(Object.values(YARDS).map(yard => yard.country || 'Россия'))];
 
@@ -104,13 +106,12 @@
 
   function fitMatchCanvas() {
     const canvas = $('#match-canvas');
-    const viewport = screens.match.getBoundingClientRect();
+    const viewport = $('#match-arena').getBoundingClientRect();
     if (!viewport.width || !viewport.height) return;
     const scale = Math.min(viewport.width/W,viewport.height/H);
     const width = W*scale, height = H*scale;
     canvas.style.width = width+'px';
     canvas.style.height = height+'px';
-    screens.match.style.setProperty('--field-width',width+'px');
     const dpr = Math.min(2,window.devicePixelRatio || 1);
     const pixelsW = Math.round(width*dpr), pixelsH = Math.round(height*dpr);
     if (canvas.width !== pixelsW || canvas.height !== pixelsH) {
@@ -154,6 +155,8 @@
       cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : challenge?.title || MODES[id].title;
     $('#match-hint').classList.remove('off');
     $('#btn-skip-lesson').classList.toggle('hidden', !options.tutorial);
+    // Keep the arena stable while the action buttons appear and disappear during a rally.
+    $('#match-actions').hidden = !options.tutorial && id !== 'cross' && !options.online;
     choose([]);
     const canvas = $('#match-canvas');
     if (gesture) gesture.destroy();
@@ -311,7 +314,7 @@
     $('#btn-result-menu').textContent = res.practice ? 'К тренировкам' : 'В меню';
     if (res.lesson) $('#btn-rematch').textContent = 'Начать матч';
     if (matchOptions.online) $('#btn-rematch').textContent = 'Новая комната';
-    $('#btn-share-result').classList.toggle('hidden', res.practice || (!lastActivity && !replay));
+    $('#btn-share-result').classList.toggle('hidden', nativeAndroid || res.practice || (!lastActivity && !replay));
     $('#btn-replay').classList.toggle('hidden', !replay);
     if (res.cupResult) {
       const r = res.cupResult;
@@ -467,6 +470,7 @@
   }
 
   function onlineLobby(invite = {}) {
+    if (!roomsAvailable) return;
     const yard = invite.yard;
     modal(`<h3>С друзьями</h3>
       ${yard ? '<p id="yard-team"></p><div class="feature-stack"><button class="btn btn-green" id="yard-invite">Пригласить во двор</button><button class="btn btn-paper" id="yard-rating">Рейтинг двора</button><button class="btn btn-paper" id="yard-refresh">Обновить комнаты</button></div><div id="yard-rooms" class="feature-stack"></div>' : ''}
@@ -551,6 +555,7 @@
   }
 
   function onlineYardMenu({code,server,preset,room} = {}) {
+    if (!roomsAvailable) return;
     modal(`<h3>${code ? 'Вступить во двор' : 'Создать онлайн-двор'}</h3>
       <div class="room-fields">
         ${code ? '' : '<label>Название двора<input id="online-yard-name" maxlength="24" placeholder="Например, Наш двор"></label>'}
@@ -732,8 +737,8 @@
       <p class="feature-status" role="status" id="yard-editor-status"></p>
       <div class="modal-actions"><button class="btn btn-paper" data-close>Закрыть</button><button class="btn btn-primary" id="save-yard">Сохранить</button></div>
       <div class="feature-stack"><button class="btn btn-paper" id="open-packs">Наборы оформления</button>
-      <button class="btn btn-green" id="share-yard">Вызов в моём дворе</button>
-      <button class="btn btn-paper" id="create-online-yard">Создать этот двор онлайн</button></div>`);
+      <button class="btn btn-green" id="share-yard" ${nativeAndroid ? 'hidden' : ''}>Вызов в моём дворе</button>
+      <button class="btn btn-paper" id="create-online-yard" ${roomsAvailable ? '' : 'hidden'}>Создать этот двор онлайн</button></div>`);
     const canvas = $('#yard-editor-preview'), ctx = canvas.getContext('2d');
     const country = $('#edit-country'), base = $('#edit-base'), season = $('#edit-season');
     country.value = YARDS[draft.base].country;
@@ -792,7 +797,7 @@
   }
 
   function editorPacks(draft) {
-    modal(`<h3>Наборы оформления</h3><p class="feature-small">Демо-витрина. При разблокировке деньги не списываются.</p>
+    modal(`<h3>Наборы оформления</h3><p class="feature-small">Все предметы доступны бесплатно.</p>
       <div class="feature-stack">${Object.entries(YardEditor.packs).map(([id,pack]) => `<button class="btn btn-paper" data-editor-pack="${id}">${pack.title} · ${Save.openCatalog || Save.data.editorPacks.includes(id) ? 'примерить' : pack.price+' ₽ в витрине'}</button>`).join('')}</div>
       <button class="btn btn-primary" id="back-to-editor">В редактор</button>`);
     $('#back-to-editor').onclick = () => yardEditor(draft);
@@ -1014,13 +1019,12 @@
           <canvas class="shop-card-preview"></canvas>
           <div class="shop-card-body">
           <div class="shop-card-title">${view.name}
-              ${y.free ? '<span class="tag tag-free">Бесплатно</span>'
-                : Save.openCatalog ? '<span class="tag tag-free">Для теста</span>'
+              ${y.free || Save.openCatalog ? '<span class="tag tag-free">Бесплатно</span>'
                 : owned ? '<span class="tag tag-owned">Куплено</span>'
                 : y.priceCoins ? '<span class="tag tag-paid">За жетоны</span>' : '<span class="tag tag-paid">Платный набор</span>'}
             </div>
             <div class="shop-card-desc">${winter ? 'Утоптанный снег на площадке и сугробы у края двора.' : y.desc}</div>
-            <div class="shop-card-items">${winter ? 'Зимнее оформление' : y.items}${Save.openCatalog && !y.free && y.priceRub ? ` · после теста ${y.priceRub} ₽` : ''}</div>
+            <div class="shop-card-items">${winter ? 'Зимнее оформление' : y.items}</div>
             <div class="shop-card-actions"></div>
           </div>`;
         const actions = card.querySelector('.shop-card-actions');
@@ -1132,9 +1136,12 @@
       if (gesture) { gesture._cancel(); gesture.enabled = false; }
     }
     const wrap = $('#modal-wrap');
-    if (wrap.classList.contains('hidden')) modalFocus = document.activeElement;
+    if (wrap.classList.contains('hidden')) {
+      modalFocus = document.activeElement;
+      modalScreen = screens[current];
+    }
     modalDismiss = onDismiss;
-    screens[current].inert = true;
+    modalScreen.inert = true;
     const box = $('#modal-box');
     box.innerHTML = html;
     box.scrollTop = 0;
@@ -1149,10 +1156,19 @@
   }
   function closeModal() {
     $('#modal-wrap').classList.add('hidden');
-    screens[current].inert = false;
+    if (modalScreen) modalScreen.inert = false;
+    modalScreen = null;
     modalDismiss = null;
-    modalFocus?.focus({preventScroll:true});
+    const trigger = modalFocus;
+    trigger?.focus({preventScroll:true});
     modalFocus = null;
+    queueMicrotask(() => {
+      if ($('#modal-wrap').classList.contains('hidden') && document.activeElement === document.body) {
+        const visible = [...screens[current].querySelectorAll('button,select,a[href]')]
+          .find(control => !control.disabled && control.getClientRects().length);
+        visible?.focus({preventScroll:true});
+      }
+    });
     paused = false; lastT = performance.now();
     if (gesture) gesture.enabled = true;
   }
@@ -1161,19 +1177,33 @@
     closeModal();
     onDismiss?.();
   }
-  $('#modal-wrap').addEventListener('click', e => { if (e.target === $('#modal-wrap')) dismissModal(); });
+  const modalWrap = $('#modal-wrap');
+  let backdropPress = false;
+  modalWrap.addEventListener('pointerdown', e => { backdropPress = e.target === modalWrap; });
+  modalWrap.addEventListener('click', e => {
+    if (backdropPress && e.target === modalWrap) dismissModal();
+    backdropPress = false;
+  });
+  function modalControls() {
+    return $$('#modal-box button, #modal-box input, #modal-box select, #modal-box a[href], #modal-box summary, #modal-box [tabindex]')
+      .filter(control => !control.matches(':disabled') && control.tabIndex >= 0 && control.getClientRects().length);
+  }
+  document.addEventListener('focusin', event => {
+    if (!modalWrap.classList.contains('hidden') && !modalWrap.contains(event.target)) {
+      ($('#modal-title') || modalControls()[0])?.focus({preventScroll:true});
+    }
+  });
   document.addEventListener('keydown', event => {
     if ($('#modal-wrap').classList.contains('hidden')) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       dismissModal();
     } else if (event.key === 'Tab') {
-      const controls = $$('#modal-box button, #modal-box input, #modal-box select, #modal-box a[href]')
-        .filter(control => !control.disabled && control.getClientRects().length);
+      const controls = modalControls();
       const index = controls.indexOf(document.activeElement);
       if (!controls.length || index < 0 || (event.shiftKey ? index === 0 : index === controls.length-1)) {
         event.preventDefault();
-        controls[event.shiftKey ? controls.length-1 : 0]?.focus();
+        (controls[event.shiftKey ? controls.length-1 : 0] || $('#modal-title'))?.focus();
       }
     }
   });
@@ -1186,9 +1216,10 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 22</p>
-      <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 23</p>
+      <button class="btn btn-green" id="btn-update-game" ${nativeAndroid ? 'hidden' : ''} style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
+      <p><a href="privacy.html">Политика конфиденциальности</a></p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
     $('#tg-sound').onclick = e => { s.sound = !s.sound; Save.save(); e.target.classList.toggle('on', s.sound); e.target.setAttribute('aria-checked',s.sound); };
     $('#tg-vibro').onclick = e => { s.vibro = !s.vibro; Save.save(); e.target.classList.toggle('on', s.vibro); e.target.setAttribute('aria-checked',s.vibro); };
@@ -1348,6 +1379,9 @@
     if (current === 'match') fitMatchCanvas();
     else if ($('#modal-wrap').classList.contains('hidden')) nav(current);
   });
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(() => { if (current === 'match') fitMatchCanvas(); }).observe($('#match-arena'));
+  }
 
   // Перерисовываем меню, когда фоновые изображения догрузились.
   window.addEventListener('art-ready', () => {
@@ -1373,10 +1407,38 @@
   I18n.start();
   nav('home');
   const params = new URLSearchParams(location.search);
-  const invitation = Activities.fromLink(params);
+  const invitation = nativeAndroid ? null : Activities.fromLink(params);
+  const courtCode = /^[a-f0-9]{24}$/.test(params.get('court') || '') ? params.get('court') : '';
+  const roomCode = /^[A-F0-9]{6}$/.test(params.get('room') || '') ? params.get('room') : '';
+  function exposeRooms() {
+    $('#btn-online').hidden = !roomsAvailable;
+    const create = $('#create-online-yard');
+    if (create) create.hidden = !roomsAvailable;
+    if (!roomsAvailable || invitation) return;
+    if (courtCode) onlineYardMenu({code:courtCode,server:params.get('server') || '',room:roomCode});
+    else if (roomCode) onlineLobby({code:roomCode,server:params.get('server') || ''});
+  }
   if (invitation) activityModal(invitation);
-  else if (/^[a-f0-9]{24}$/.test(params.get('court') || '')) onlineYardMenu({
-    code:params.get('court'),server:params.get('server') || '',room:params.get('room') || ''
-  });
-  else if (/^[A-F0-9]{6}$/.test(params.get('room') || '')) onlineLobby({code:params.get('room'),server:params.get('server') || ''});
+  exposeRooms();
+  const endpoint = $('meta[name="football-rooms-origin"]')?.content;
+  const inviteServer = (courtCode || roomCode) && params.get('server');
+  if (!nativeAndroid && !roomsAvailable && (inviteServer || endpoint)) {
+    Promise.resolve().then(() => OnlineRooms.request(OnlineRooms.origin(inviteServer || endpoint),'',{resource:'health'}))
+      .then(health => {
+        roomsAvailable = health.version >= 2;
+        exposeRooms();
+      }).catch(() => {});
+  }
+  if (nativeAndroid) {
+    window.footballPause = () => {
+      if (current === 'match' && !paused) pauseModal();
+    };
+    window.footballBack = () => {
+      if (!modalWrap.classList.contains('hidden')) dismissModal();
+      else if (current === 'match') pauseModal();
+      else if (current !== 'home') nav('home');
+      else return false;
+      return true;
+    };
+  }
 })();
