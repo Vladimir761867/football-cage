@@ -268,6 +268,24 @@ test('a Spanish yard invitation preserves several decorations and loads with the
   });
 });
 
+test('Russian winter persists and travels in invitations while Spanish yards stay summer', () => {
+  const { Activities, Save, Yards, YARDS } = runtime();
+  Save.data.selectedYard = 'ru90_2';
+  const summerGoal = Yards.goalGeometry(360,740);
+  Save.data.yardSeason = 'winter';
+  assert.equal(Yards.theme().season, 'winter');
+  assert.deepEqual(Yards.goalGeometry(360,740), summerGoal);
+  Save.data.selectedYard = 'es80_madrid';
+  assert.equal(Yards.theme().season, undefined);
+
+  const challenge = Activities.definition('targets', '2026-11-12');
+  const custom = { base: 'ru90_2', props: ['bench', 'neighbor'], season: 'winter' };
+  const received = Activities.fromLink(new URL(Activities.link({ ...challenge, custom })).searchParams);
+  assert.equal(received.custom.season, 'winter');
+  assert.equal(Yards.editedTheme(received.custom).variant, 1);
+  assert.equal(Yards.editedTheme({ base: YARDS.es80_madrid.id, season: 'winter' }).custom.season, 'summer');
+});
+
 test('wardrobe offers free everyday clothes in every era and purchases charge once', () => {
   const storage=new Map();
   const {Wardrobe,Save}=runtime(storage);

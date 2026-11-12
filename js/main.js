@@ -46,7 +46,8 @@
     $$('.coins-chip b').forEach(b => b.textContent = v);
   }
   function updateYardLabel() {
-    $('#home-yard-label').textContent = Yards.theme().name;
+    const yard = Yards.theme();
+    $('#home-yard-label').textContent = yard.name + (yard.season === 'winter' ? ' · Зима' : '');
   }
   function updateBests() {
     $('#best-dog').textContent = Save.data.best.dog ? `Рекорд: ${Save.data.best.dog} очк.` : 'Ещё не играл';
@@ -432,12 +433,13 @@
   const editorLabels = {surface:'Покрытие',frame:'Ворота',light:'Свет'};
   const ownsYard = yard => yard.free || Save.data.ownedYards.includes(yard.id);
   function yardEditor(previous = Save.data.customYard || {base:Save.data.selectedYard}) {
-    const draft = YardEditor.clean(previous);
+    const draft = YardEditor.clean({ ...previous, season: previous.season ?? Save.data.yardSeason });
     modal(`<h3>Мой двор</h3><canvas class="yard-editor-preview" id="yard-editor-preview" width="620" height="360"></canvas>
       <div class="editor-fields">
         <label>Страна<select id="edit-country"><option>Россия</option><option>Испания</option></select></label>
         <label>Площадка<select id="edit-base"></select></label>
-        ${Object.entries(editorLabels).map(([field,label]) => `<label>${label}<select id="edit-${field}">
+        <label id="edit-season-label">Сезон<select id="edit-season"><option value="summer">Лето</option><option value="winter">Зима</option></select></label>
+        ${Object.entries(editorLabels).map(([field,label]) => `<label><span id="edit-${field}-caption">${label}</span><select id="edit-${field}">
           ${Object.entries(YardEditor.fields[field]).map(([key,label]) => `<option value="${key}">${label}${YardEditor.available(field,key) ? '' : ' · набор'}</option>`).join('')}</select></label>`).join('')}
       </div>
       <fieldset class="yard-decorations"><legend>Детали и зрители</legend>
@@ -450,18 +452,22 @@
       <div class="feature-stack"><button class="btn btn-paper" id="open-packs">Наборы оформления</button>
       <button class="btn btn-green" id="share-yard">Вызов в моём дворе</button></div>`);
     const canvas = $('#yard-editor-preview'), ctx = canvas.getContext('2d');
-    const country = $('#edit-country'), base = $('#edit-base');
+    const country = $('#edit-country'), base = $('#edit-base'), season = $('#edit-season');
     country.value = YARDS[draft.base].country;
+    if (country.value === 'Испания') draft.season = Save.data.yardSeason === 'winter' ? 'winter' : 'summer';
+    season.value = draft.season;
     function updateBases() {
       base.replaceChildren(...YardEditor.bases.map(id => YARDS[id]).filter(y => y.country === country.value)
         .map(y => new Option(y.name.replace(/^Россия, /, '') + (ownsYard(y) ? '' : ' · в магазине'), y.id)));
       base.value = draft.base;
       if (!base.value) base.selectedIndex = 0;
       draft.base = base.value;
+      $('#edit-season-label').hidden = country.value !== 'Россия';
     }
     function preview() {
       if (!canvas.isConnected || $('#modal-wrap').classList.contains('hidden')) return;
       const t = YardEditor.clean(draft);
+      $('#edit-surface-caption').textContent = t.season === 'winter' ? 'Покрытие летом' : 'Покрытие';
       Yards.withScene(Yards.editedTheme(t), () => {
         Yards.paintMenu(ctx,canvas.width,canvas.height);
         Yards.drawPlayer(ctx,canvas.width*.51,canvas.height*.91,.60,'#3f7fba','field',{moving:false});
@@ -481,12 +487,15 @@
     });
     country.onchange = () => { updateBases(); preview(); };
     base.onchange = () => { draft.base = base.value; preview(); };
+    season.onchange = () => { draft.season = season.value; preview(); };
     $$('.yard-decorations input').forEach(input => input.onchange = () => {
       draft.props = $$('.yard-decorations input:checked').map(box => box.value);
       preview();
     });
     $('#save-yard').onclick = () => {
-      Save.data.customYard = YardEditor.clean(draft); Save.data.selectedYard = 'custom';
+      Save.data.customYard = YardEditor.clean(draft);
+      if (country.value === 'Россия') Save.data.yardSeason = draft.season;
+      Save.data.selectedYard = 'custom';
       Yards.syncBallToYard(); closeModal(); nav('home');
     };
     $('#open-packs').onclick = () => editorPacks(draft);
@@ -602,18 +611,20 @@
       ).forEach(y => {
         const owned = ownsYard(y);
         const selected = Save.data.selectedYard === y.id;
+        const view = Yards.seasonal(y, Save.data.yardSeason);
+        const winter = view.season === 'winter';
         const card = document.createElement('div');
         card.className = 'shop-card';
         card.innerHTML = `
           <canvas class="shop-card-preview"></canvas>
           <div class="shop-card-body">
-            <div class="shop-card-title">${y.name}
+            <div class="shop-card-title">${view.name}
               ${y.free ? '<span class="tag tag-free">Бесплатно</span>'
                 : owned ? '<span class="tag tag-owned">Куплено</span>'
                 : y.priceCoins ? '<span class="tag tag-paid">За жетоны</span>' : '<span class="tag tag-paid">Платный набор</span>'}
             </div>
-            <div class="shop-card-desc">${y.desc}</div>
-            <div class="shop-card-items">В наборе: ${y.items}</div>
+            <div class="shop-card-desc">${winter ? 'Утоптанный снег на площадке и сугробы у края двора.' : y.desc}</div>
+            <div class="shop-card-items">${winter ? 'Зимнее оформление' : 'В наборе: ' + y.items}</div>
             <div class="shop-card-actions"></div>
           </div>`;
         const actions = card.querySelector('.shop-card-actions');
@@ -744,7 +755,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 18</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 19</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -826,6 +837,17 @@
     syncTabs();
     renderShop();
   });
+  $$('[data-season]').forEach(button => button.onclick = () => {
+    const season = button.dataset.season;
+    Save.data.yardSeason = season;
+    const custom = Save.data.customYard;
+    if (YARDS[custom?.base]?.country === 'Россия') custom.season = season;
+    Save.save();
+    Sound.ui();
+    syncTabs();
+    paintBg('#shop-bg');
+    renderShop();
+  });
   $$('#yard-era-filter [data-era]').forEach(b => b.onclick = () => {
     Sound.ui(); yardEra = b.dataset.era;
     $$('#yard-era-filter [data-era]').forEach(x => x.classList.toggle('active', x === b));
@@ -834,10 +856,16 @@
   function syncTabs() {
     $$('.shop-tab').forEach(x => x.classList.toggle('active', x.dataset.tab === shopTab));
     $('#yard-country-filter').classList.toggle('hidden', shopTab !== 'yards');
+    $('#yard-season-filter').classList.toggle('hidden', shopTab !== 'yards' || yardCountry !== 'Россия');
     $$('[data-country]').forEach(b => {
       const selected = b.dataset.country === yardCountry;
       b.classList.toggle('active', selected);
       b.setAttribute('aria-pressed', selected);
+    });
+    $$('[data-season]').forEach(button => {
+      const selected = button.dataset.season === (Save.data.yardSeason === 'winter' ? 'winter' : 'summer');
+      button.classList.toggle('active', selected);
+      button.setAttribute('aria-pressed', selected);
     });
     $$('#yard-era-filter [data-era]').forEach(b => {
       b.hidden = b.dataset.era !== 'all' && !Object.values(YARDS).some(y => y.country === yardCountry && y.era === b.dataset.era);

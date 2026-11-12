@@ -335,10 +335,10 @@ class DogMode {
             kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .22) : false });
         ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
         ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
-        ctx.fillText(i === 0 && !this.youDog ? 'ТЫ' : `${i + 1}`, n.x, n.y + 19 * s);
+        Yards.drawFieldText(ctx, i === 0 && !this.youDog ? 'ТЫ' : `${i + 1}`, n.x, n.y + 19 * s);
         if (this.errors[i]) {
           ctx.fillStyle = '#ffd24d'; ctx.font = `700 ${Math.round(11 * s)}px Rubik`;
-          ctx.fillText(`${this.errors[i]}/10`, n.x, n.y + 32 * s);
+          Yards.drawFieldText(ctx, `${this.errors[i]}/10`, n.x, n.y + 32 * s);
         }
         if (n.react > 0) Yards.drawEmote(ctx, n.x, n.y - 160 * s, .8, '👍');
       } else {
@@ -350,7 +350,7 @@ class DogMode {
         Yards.drawPlayer(ctx, d.x, d.y, s, '#d25743', 'field', { me:this.youDog && it.i === 0, phase: d.phase, moving: d.moving, face: d.face });
         if (this.youDog && it.i === 0) {
           ctx.fillStyle = '#9bf36a'; ctx.font = '800 13px Rubik'; ctx.textAlign = 'center';
-          ctx.fillText('ТЫ', d.x, d.y + 18);
+          Yards.drawFieldText(ctx, 'ТЫ', d.x, d.y + 18);
         }
         if (this.lastSteal >= 0) Yards.drawEmote(ctx, d.x, d.y - 160 * s, .85, '😎');
       }

@@ -182,12 +182,17 @@ const Yards = (() => {
   function editedTheme(preset) {
     const custom = YardEditor.clean(preset);
     const base = YARDS[custom.base];
-    return { ...base, id:'custom', name:`Мой двор · ${base.country} · ${base.era}`, custom };
+    return { ...seasonal(base, custom.season), id:'custom', name:`Мой двор · ${base.country} · ${base.era}`, custom };
+  }
+  function seasonal(base, season) {
+    if (season !== 'winter' || base.country === 'Испания') return base;
+    return { ...base, season, atlas: base.atlas || ballEra(base), variant: base.variant ?? 0,
+      name: base.name.replace(' после дождя', '') };
   }
   function theme() {
     if (scene) return scene;
     if (Save.data.selectedYard === 'custom' && Save.data.customYard) return editedTheme(Save.data.customYard);
-    return YARDS[Save.data.selectedYard] || YARDS.classic;
+    return seasonal(YARDS[Save.data.selectedYard] || YARDS.classic, Save.data.yardSeason);
   }
   function setScene(t) { scene = t; }
   function withScene(t, draw) {
@@ -362,7 +367,7 @@ const Yards = (() => {
     const ground = g.y + 4 * unit;
     ctx.save();
     const tint = { wet:'rgba(32,46,66,.46)', turf:'rgba(46,91,42,.58)', clay:'rgba(140,70,44,.54)' }[c.surface];
-    if (tint) {
+    if (tint && t.season !== 'winter') {
       ctx.fillStyle = tint; ctx.fillRect(0, ground, w, h-ground);
       ctx.strokeStyle = c.surface === 'wet' ? 'rgba(218,226,245,.10)' : 'rgba(253,236,192,.12)';
       ctx.lineWidth = unit;
@@ -446,6 +451,7 @@ const Yards = (() => {
 
   function drawYardReaction(ctx, w, h, elapsed) {
     const t = theme();
+    if (t.season === 'winter') drawSnowfall(ctx, w, h, elapsed);
     const phase = elapsed % 19;
     if (!t.custom?.props.includes('neighbor') || phase < 12 || phase > 14.8) return;
     const a = neighborWindow(w,h,goalGeometry(w,h),t);
@@ -461,9 +467,37 @@ const Yards = (() => {
     ctx.restore();
   }
 
+  function drawSnowfall(ctx, w, h, elapsed) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(247,252,255,.56)';
+    ctx.beginPath();
+    for (let i = 0; i < 24; i++) {
+      const x = (i * 137 + elapsed * (7 + i % 5)) % w;
+      const y = (i * 91 + elapsed * (15 + i % 7)) % (h * .63);
+      const size = 1 + (i % 3) * .46;
+      ctx.moveTo(x + size, y);
+      ctx.arc(x, y, size, 0, 2 * Math.PI);
+    }
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawFieldText(ctx, text, x, y) {
+    if (theme().season === 'winter') {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(17,29,44,.86)';
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(text, x, y);
+      ctx.restore();
+    }
+    ctx.fillText(text, x, y);
+  }
+
   function paintPhotoCourt(ctx, w, h, t) {
     if (!t.photo && !t.atlas) return false;
-    const img = t.photo ? photoAsset(t.photo.file) : ART.russian[t.atlas];
+    const winter = t.season === 'winter' ? photoAsset(`russia-${t.atlas}-winter`) : null;
+    const img = t.photo ? photoAsset(t.photo.file) : ready(winter) ? winter : ART.russian[t.atlas];
     if (!ready(img)) return false;
     const cell = img.naturalWidth / (t.photo ? 1 : 3);
     const p = atlasPlacement(w, h, t);
@@ -472,7 +506,7 @@ const Yards = (() => {
     // Общий визуальный язык любимого российского двора: тёплое окно/фонарь,
     // вечернее небо, вид к воротам и свободное поле на переднем плане.
     const evening = ctx.createLinearGradient(0, 0, 0, h);
-    evening.addColorStop(0, 'rgba(78,69,125,.14)');
+    evening.addColorStop(0, t.season === 'winter' ? 'rgba(48,78,122,.12)' : 'rgba(78,69,125,.14)');
     evening.addColorStop(.42, 'rgba(255,174,104,.055)');
     evening.addColorStop(1, 'rgba(38,32,58,.12)');
     ctx.fillStyle = evening; ctx.fillRect(0, 0, w, h);
@@ -483,7 +517,7 @@ const Yards = (() => {
     const shade = ctx.createLinearGradient(0, 0, 0, h);
     shade.addColorStop(0, 'rgba(9,14,24,.15)');
     shade.addColorStop(.65, 'rgba(9,14,24,0)');
-    shade.addColorStop(1, 'rgba(9,14,24,.55)');
+    shade.addColorStop(1, t.season === 'winter' ? 'rgba(9,14,24,.28)' : 'rgba(9,14,24,.55)');
     ctx.fillStyle = shade; ctx.fillRect(0, 0, w, h);
     if (t.custom) paintCustom(ctx,w,h,t);
     return true;
@@ -767,6 +801,12 @@ const Yards = (() => {
   /* ---------- мяч ---------- */
   const trails = new WeakMap();
   function drawBall(ctx, x, y, r, ballDef, flying = false) {
+    if (!ballDef && theme().season === 'winter') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(25,38,55,.78)';
+      ctx.beginPath(); ctx.arc(x, y, r * 1.05, 0, 2 * Math.PI); ctx.fill();
+      ctx.restore();
+    }
     const now = performance.now();
     let trail = trails.get(ctx) || [];
     const last = trail[trail.length - 1];
@@ -1007,12 +1047,12 @@ const Yards = (() => {
   }
 
   function paintPreview(canvas, yardId) {
-    const t = YARDS[yardId];
+    const t = seasonal(YARDS[yardId], Save.data.yardSeason);
     const ctx = canvas.getContext('2d');
     const w = canvas.width = canvas.clientWidth * 2 || 600;
     const h = canvas.height = canvas.clientHeight * 2 || 300;
     withScene(t, () => paintMenu(ctx, w, h));
   }
 
-  return { theme, editedTheme, setScene, withScene, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, drawYardReaction, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
+  return { theme, editedTheme, seasonal, setScene, withScene, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, drawYardReaction, drawFieldText, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
 })();

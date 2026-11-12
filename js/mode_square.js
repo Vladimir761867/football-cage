@@ -290,10 +290,10 @@ class SquareMode {
         { phase: n.phase, moving: !!n.moving, face: !n.moving && ball ? (ball.x < p.x - 3 ? -1 : 1) : n.face, kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .2) : false });
       ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
       ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
-      ctx.fillText(i === 0 ? 'ТЫ' : `${i + 1}`, p.x, p.y + 20 * s);
+      Yards.drawFieldText(ctx, i === 0 ? 'ТЫ' : `${i + 1}`, p.x, p.y + 20 * s);
       ctx.fillStyle = this.errors[i] >= 7 ? '#ff8d7a' : 'rgba(255,210,77,.9)';
       ctx.font = `700 ${Math.round(11 * s)}px Rubik`;
-      ctx.fillText(`${this.errors[i]}/10`, p.x, p.y + 34 * s);
+      Yards.drawFieldText(ctx, `${this.errors[i]}/10`, p.x, p.y + 34 * s);
     });
 
     // шлейф и мяч

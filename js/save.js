@@ -5,6 +5,7 @@ const Save = (() => {
     coins: 0,
     ownedYards: ['classic'],
     selectedYard: 'classic',
+    yardSeason: 'summer',
     ownedBalls: ['classic'],
     selectedBall: 'classic',
     ballsByEra: {},

@@ -92,7 +92,7 @@ class Am300Mode {
         kick: isShooter && (p.me ? this.state === 'fly' : this.botKickT > 0),
         celebrate: happyWatcher && p.me });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '700 12px Rubik'; ctx.textAlign = 'center';
-      ctx.fillText(p.name, spot.x, spot.y + 14 * spot.s);
+      Yards.drawFieldText(ctx, p.name, spot.x, spot.y + 14 * spot.s);
       if (emote) Yards.drawEmote(ctx, spot.x, spot.y - hop - 158 * spot.s, .8, emote);
     };
     watchers.forEach((p, i) => draw(p, spots[i], false));
@@ -297,7 +297,7 @@ class Am300Mode {
       ctx.strokeStyle = '#ffd24d'; ctx.lineWidth = 3; ctx.setLineDash([6, 6]);
       ctx.beginPath(); ctx.arc(nx, topY + nineR * 1.65, nineR, 0, 7); ctx.stroke(); ctx.setLineDash([]);
       ctx.fillStyle = 'rgba(255,210,77,.9)'; ctx.font = '700 13px Rubik'; ctx.textAlign = 'center';
-      ctx.fillText('75', nx, topY + nineR * 1.8);
+      Yards.drawFieldText(ctx, '75', nx, topY + nineR * 1.8);
     }
     ctx.restore();
     if (!Yards.theme().atlas && !Yards.artGoal(this.env.W, this.env.H)) Yards.drawGoalFrame(ctx, g);
@@ -305,9 +305,9 @@ class Am300Mode {
     this._drawActors(ctx, W, H);
     // подписи целей
     ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '700 12px Rubik'; ctx.textAlign = 'center';
-    ctx.fillText('ПЕРЕКЛАДИНА 100', g.x + g.w / 2, topY - 14);
-    ctx.fillText('50', g.x - 16, g.y - g.h / 2);
-    ctx.fillText('50', g.x + g.w + 16, g.y - g.h / 2);
+    Yards.drawFieldText(ctx, 'ПЕРЕКЛАДИНА 100', g.x + g.w / 2, topY - 14);
+    Yards.drawFieldText(ctx, '50', g.x - 16, g.y - g.h / 2);
+    Yards.drawFieldText(ctx, '50', g.x + g.w + 16, g.y - g.h / 2);
 
     // мяч и прицел
     if ((this.state === 'aim' || this.state === 'impact' || this.state === 'bot') && !this.botFly) {

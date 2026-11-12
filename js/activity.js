@@ -37,11 +37,11 @@ const Activities = (() => {
     if (!challenge) return null;
     const score = params.get('score');
     const yard = (params.get('yard') || '').split('.');
-    if ((yard.length === 6 || yard.length === 7) && YardEditor.bases.includes(yard[0])) {
+    if (yard.length >= 6 && yard.length <= 8 && YardEditor.bases.includes(yard[0])) {
       challenge.yard = yard[0];
       challenge.custom = YardEditor.clean({
         base: yard[0], surface: yard[1], frame: yard[2], light: yard[3], kit: yard[4],
-        prop: yard[5], props: yard[6]?.split(',')
+        prop: yard[5], props: yard[6]?.split(','), season: yard[7]
       });
     }
     if (score !== null && /^\d{1,3}$/.test(score)) challenge.friend = +score;
@@ -54,7 +54,9 @@ const Activities = (() => {
     if (Number.isInteger(score)) url.searchParams.set('score', score);
     if (c.custom) {
       const yard = YardEditor.clean(c.custom);
-      url.searchParams.set('yard', [yard.base, yard.surface, yard.frame, yard.light, yard.kit, yard.prop, yard.props.join(',')].join('.'));
+      const parts = [yard.base, yard.surface, yard.frame, yard.light, yard.kit, yard.prop, yard.props.join(',')];
+      if (yard.season === 'winter') parts.push(yard.season);
+      url.searchParams.set('yard', parts.join('.'));
     }
     return url.href;
   }
@@ -77,7 +79,8 @@ const Activities = (() => {
     if (!c.custom) return c.key;
     const yard = YardEditor.clean(c.custom);
     const legacy = [yard.base, yard.surface, yard.frame, yard.light, yard.kit, yard.prop].join('.');
-    return c.key + ':' + legacy + (yard.props.length > 1 || (yard.props.length && yard.prop === 'none') ? '.' + yard.props.join(',') : '');
+    const decorations = yard.props.length > 1 || (yard.props.length && yard.prop === 'none') ? '.' + yard.props.join(',') : '';
+    return c.key + ':' + legacy + decorations + (yard.season === 'winter' ? '.winter' : '');
   }
   function personal(c) { return Save.data.activities[resultKey(c)]; }
   function record(c, score) {
@@ -127,6 +130,7 @@ const YardEditor = {
     const requested = Array.isArray(data.props) ? data.props : [result.prop];
     result.props = Object.keys(this.decorations).filter(id => requested.includes(id));
     result.prop = result.props.find(id => Object.hasOwn(this.fields.prop, id)) || 'none';
+    result.season = YARDS[result.base].country === 'Россия' && data.season === 'winter' ? 'winter' : 'summer';
     return result;
   },
   available(field, value) {

@@ -355,7 +355,7 @@ class CrossMode {
           celebrate: inWait && this._lastGoal && i === this._lastShooter,
           catch: inWait && ((this._lastSaved && i === this._lastKeeper) || (!this._lastGoal && i === this.keeperIndex)) });
       ctx.fillStyle = '#fdf7e8'; ctx.font = '700 13px Rubik'; ctx.textAlign = 'center';
-      ctx.fillText(this._name(i) + (keeper ? ' 🧤' : ''), p.x, p.y + 17);
+      Yards.drawFieldText(ctx, this._name(i) + (keeper ? ' 🧤' : ''), p.x, p.y + 17);
       // мимика: после удара
       if (inWait && this.waitT > .1) {
         let e = '';
