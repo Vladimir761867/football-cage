@@ -7,11 +7,7 @@ class SquareMode {
     this.env = env;
     const { W, H } = env;
     const difficulty = env.difficulty || 'normal';
-    this.cfg = {
-      easy:   { receive: 1.35, botDelay: .55, botAcc: .74, angle: .66 },
-      normal: { receive: 1.0,  botDelay: .38, botAcc: .86, angle: .52 },
-      hard:   { receive: .74,  botDelay: .26, botAcc: .95, angle: .40 }
-    }[difficulty];
+    this.cfg = Difficulty.square(difficulty);
     // запасной прямоугольник, если арт ещё не загрузился
     this.court = { x: W * .09, y: H * .24, w: W * .82, h: H * .56 };
     // четверти: ты — нижняя левая (ближе к пальцу и крупнее в перспективе)
@@ -39,7 +35,7 @@ class SquareMode {
     this.receiveT = 0;
     this.bounces = 0;
     this.score = 0;
-    this.timeLeft = 150;
+    this.timeLeft = env.cup ? 90 : 150;
     this.lastMistake = '';
     this.trail = [];
 
@@ -49,7 +45,7 @@ class SquareMode {
       { id: 'p3', lbl: 'Игрок 3', val: '0/10' },
       { id: 'p4', lbl: 'Игрок 4', val: '0/10' }
     ]);
-    env.hud.setTimer('150');
+    env.hud.setTimer(this.timeLeft);
     env.hud.hint('Твоя четверть — нижняя левая. Отбей до второго отскока');
 
     env.gesture.onStart = p => {
@@ -79,7 +75,7 @@ class SquareMode {
             { x: c.x + c.w, y: c.y + c.h }, { x: c.x, y: c.y + c.h }];
   }
   _pos(i) { return Yards.quadPoint(this._quad(), this.nodes[i].u, this.nodes[i].v); }
-  _scale(i) { return .6 + this.nodes[i].v * .55; }
+  _scale(i) { return (.6 + this.nodes[i].v * .55) * .82; }
   _targets() { return this.nodes.map((_, i) => i).filter(i => i !== this.holder && this.active[i]); }
 
   _hit(drag) {
@@ -291,6 +287,7 @@ class SquareMode {
     const coins = this.score * 5 + (won ? 30 : 0) + (newBest ? 15 : 0);
     Save.addCoins(coins);
     this.env.finish({
+      won, penalties: [...this.errors],
       title: timedOut ? 'Время вышло' : won ? 'Остался последним!' : 'Ты выбыл',
       score: `${this.score} точных отбиваний`,
       sub: timedOut ? 'Партия завершена по времени — победитель не определён' : won ? 'Все остальные набрали по 10 штрафов' : 'Два отскока в своей части — штрафное очко',

@@ -1,16 +1,13 @@
-/* «Собачка» (квадрат/круг на скорость): игроки стоят по кругу, нарисованному на земле,
-   и быстро перепасовываются. В центре — водящий. Пас надо отдать, пока не кончилось
+/* «Собачка»: игроки стоят по краям зоны из четырёх конусов и быстро
+   перепасовываются. В центре — водящие. Пас надо отдать, пока не кончилось
    время удержания (кольцо вокруг мяча); быстрые передачи дают бонус. */
 class DogMode {
   constructor(env) {
     this.env = env;
     const { W, H } = env;
     const difficulty = env.difficulty || 'normal';
-    this.cfg = {
-      easy:   { dogs: 1, passers: 3, steal: .14, speed: 1.2, cover: 46, hold: 2.3 },
-      normal: { dogs: 1, passers: 4, steal: .24, speed: 1.5, cover: 58, hold: 1.8 },
-      hard:   { dogs: 2, passers: 5, steal: .36, speed: 1.85, cover: 70, hold: 1.4 }
-    }[difficulty];
+    this.cfg = Difficulty.dog(difficulty);
+    this.paceLevel = 1;
     this.difficulty = difficulty;
     this.court = { x: W * .09, y: H * .2, w: W * .82, h: H * .64 };
     this.passers = this._makePassers(this.cfg.passers);
@@ -38,10 +35,11 @@ class DogMode {
     env.hud.setPills([
       { id: 'score', lbl: 'Очки', val: 0 },
       { id: 'passes', lbl: 'Передачи', val: 0 },
-      { id: 'losses', lbl: 'Потери', val: '0/10' }
+      { id: 'losses', lbl: 'Потери', val: '0/10' },
+      { id: 'pace', lbl: 'Темп', val: '1/5' }
     ]);
     env.hud.setTimer('90');
-    env.hud.hint(`Пасуй быстро: кольцо у мяча тает. Водящих: ${this.cfg.dogs}`);
+    env.hud.hint(`${this.cfg.passers} против ${this.cfg.dogs}. Короткий свайп к партнёру. Каждые 8 пасов темп растёт`);
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim' || this.holder !== 0 || !this.active[0]) return;
@@ -65,17 +63,17 @@ class DogMode {
   _quad() {
     const { W, H } = this.env;
     const q = Yards.courtQuad(W, H);
-    if (q) return q;
+    if (q) return q.map(p => ({x: U.clamp(p.x, W*.035, W*.965), y: p.y}));
     const c = this.court;
     return [{ x: c.x, y: c.y }, { x: c.x + c.w, y: c.y }, { x: c.x + c.w, y: c.y + c.h }, { x: c.x, y: c.y + c.h }];
   }
   _pt(u, v) { return Yards.quadPoint(this._quad(), u, v); }
-  _scaleAt(v) { return .6 + v * .55; }
+  _scaleAt(v) { return (.6 + v * .55) * .88; }
 
   _makePassers(count) {
-    return Array.from({ length: count }, (_, i) => {
-      const a = Math.PI / 2 + i * Math.PI * 2 / count; // игрок 0 — внизу, ближе к пальцу
-      const u = .5 + Math.cos(a) * .36, v = .5 + Math.sin(a) * .36;
+    const places = count === 4 ? [[.5,.94],[.055,.50],[.5,.065],[.945,.50]]
+      : [[.5,.94],[.055,.70],[.16,.065],[.84,.065],[.945,.70]];
+    return places.map(([u, v], i) => {
       const pt = this._pt(u, v);
       return { u, v, x: pt.x, y: pt.y, phase: i * .9, kickT: 0, react: 0, face: 1 };
     });
@@ -105,23 +103,18 @@ class DogMode {
     if (best < 0) return;
     const p = U.clamp(drag.len / (Math.min(this.env.W, this.env.H) * .38), 0, 1.2);
     const from = this.passers[this.holder], target = this.passers[best];
-    const covered = this.dogs.some(d => this._distanceToSegment(d, from, target) < this.cfg.cover);
     const badPower = p < .28 || p > 1.02;
     const out = diff > .58 || badPower;
     let outcome = 'ok';
     if (out) outcome = 'out';
-    else if (covered && Math.random() < this.cfg.steal + .26 * p) outcome = 'steal';
-    else if (Math.random() < .04) outcome = 'steal';
     const mid = { x: (from.x + target.x) / 2, y: (from.y + target.y) / 2 };
-    const dog = this.dogs[0];
     this.state = 'fly';
     this.fast = this.holder === 0 && this.holdT < this.holdMax * .45;
     from.kickT = .22;
     this.fly = {
-      from: { x: from.x, y: from.y }, to: outcome === 'steal' ? { x: dog.x, y: dog.y }
-        : outcome === 'out' ? { x: mid.x + Math.cos(drag.angle) * 120, y: mid.y + Math.sin(drag.angle) * 120 }
+      from: { x: from.x, y: from.y }, to: outcome === 'out' ? { x: mid.x + Math.cos(drag.angle) * 120, y: mid.y + Math.sin(drag.angle) * 120 }
         : { x: target.x, y: target.y },
-      target: best, outcome, t: 0, dur: .3 / this.cfg.speed + .12 * (1 - Math.min(1, p))
+      target: best, outcome, t: 0, dur: .36 + Math.hypot(target.x-from.x,target.y-from.y) / this.env.W * .18
     };
     Sound.pass();
   }
@@ -142,8 +135,10 @@ class DogMode {
     this.holder = i;
     this.state = 'aim';
     this.holdT = 0;
-    this.holdMax = Math.max(this.cfg.hold * .55, this.cfg.hold - this.passes * .018);
-    this.botHold = .32 + Math.random() * .3;
+    this.paceLevel = Math.min(5, 1 + Math.floor(this.passes / 8));
+    this.holdMax = this.cfg.hold / (1 + (this.paceLevel - 1) * .08);
+    this.botHold = this.cfg.botHold / (1 + (this.paceLevel - 1) * .08) + Math.random() * .15;
+    this.env.hud.setPill('pace', `${this.paceLevel}/5`);
   }
 
   _nextHolder() {
@@ -211,15 +206,30 @@ class DogMode {
         d.tx = U.lerp(c.x, (from.x + to.x) / 2, .7);
         d.ty = U.lerp(c.y, (from.y + to.y) / 2, .7);
       } else {
-        d.tx = U.lerp(c.x, holder.x, .27 + i * .05);
-        d.ty = U.lerp(c.y, holder.y, .27 + i * .05);
+        const pressure = .18 + U.clamp(this.holdT / this.holdMax, 0, 1) * .72;
+        d.tx = U.lerp(c.x, holder.x, pressure);
+        d.ty = U.lerp(c.y, holder.y, pressure);
       }
-      const k = 1 - Math.pow(.001, dt * this.cfg.speed);
-      const ox = d.x; d.x = U.lerp(d.x, d.tx, k); d.y = U.lerp(d.y, d.ty, k); d.phase += dt * 8;
+      if (this.dogs.length > 1) d.tx += (i === 0 ? -1 : 1) * this.env.W * .035;
+      const dx = d.tx-d.x, dy = d.ty-d.y, dist = Math.hypot(dx,dy);
+      const step = Math.min(dist, this.cfg.speed * (1 + (this.paceLevel - 1) * .12) * dt);
+      d.moving = step > .15;
+      const ox = d.x;
+      if (dist > 0) { d.x += dx/dist*step; d.y += dy/dist*step; }
+      d.phase += step * .10;
       d.face = d.x - ox < -.15 ? -1 : d.x - ox > .15 ? 1 : d.face;
     });
     if (this.state === 'fly' && this.fly) {
+      const previous = U.easeOut(U.clamp(this.fly.t,0,1));
       this.fly.t += dt / this.fly.dur;
+      const f = this.fly, t = U.easeOut(U.clamp(f.t,0,1));
+      const bx = U.lerp(f.from.x,f.to.x,t), by = U.lerp(f.from.y,f.to.y,t);
+      // Отбор происходит у мяча, а не по случайному броску при старте паса.
+      const catcher = f.outcome === 'ok' && f.t > .08 && f.t < .95
+        && this.dogs.find(d => this._distanceToSegment(d,
+          {x:U.lerp(f.from.x,f.to.x,previous),y:U.lerp(f.from.y,f.to.y,previous)},
+          {x:bx,y:by}) < this.cfg.reach + 6);
+      if (catcher) { f.outcome = 'steal'; f.to = {x:catcher.x,y:catcher.y}; f.t = 1; }
       if (this.fly.t >= 1) this._resolve();
     }
     if (this.lastSteal >= 0) { this.lastSteal += dt; if (this.lastSteal > .8) this.lastSteal = -1; }
@@ -232,9 +242,6 @@ class DogMode {
     const from = this.passers[this.holder], to = this.passers[target];
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
     this._pass({ angle, len: Math.min(this.env.W, this.env.H) * (.20 + Math.random() * .12) });
-    if (this.fly && this.difficulty === 'easy' && this.fly.outcome === 'steal' && Math.random() < .35) {
-      this.fly.outcome = 'ok'; this.fly.to = { ...to };
-    }
   }
 
   draw(ctx) {
@@ -242,11 +249,18 @@ class DogMode {
     const q = this._quad();
     this.env.bgFor('court', bg => {
       Yards.paintCourt(bg, W, H, this.court);
-      Yards.drawCourtMarks(bg, q, { outer: true, cross: false, ring: true });
+      // Четыре тренировочных столбика вместо мелового круга.
+      for (const [u,v] of [[.02,.02],[.98,.02],[.98,.98],[.02,.98]]) {
+        const p = Yards.quadPoint(q,u,v), s = .7 + v*.4;
+        bg.save(); bg.translate(p.x,p.y);
+        bg.fillStyle='rgba(0,0,0,.3)'; bg.beginPath(); bg.ellipse(0,3,11*s,4*s,0,0,7); bg.fill();
+        bg.fillStyle='#f57921'; bg.beginPath(); bg.moveTo(-9*s,0); bg.lineTo(-3*s,-25*s); bg.lineTo(3*s,-25*s); bg.lineTo(9*s,0); bg.closePath(); bg.fill();
+        bg.fillStyle='#fff4db'; bg.fillRect(-5*s,-14*s,10*s,4*s); bg.restore();
+      }
     });
 
     // мяч — позиция
-    let bx, by, bs = 1;
+    let bx, by;
     if (this.state === 'fly' && this.fly) {
       const tt = U.easeOut(U.clamp(this.fly.t, 0, 1));
       bx = U.lerp(this.fly.from.x, this.fly.to.x, tt);
@@ -275,7 +289,7 @@ class DogMode {
           ctx.beginPath(); ctx.ellipse(n.x, n.y + 3 * s, 32 * s, 12 * s, 0, -Math.PI / 2, -Math.PI / 2 + left * Math.PI * 2); ctx.stroke();
         }
         Yards.drawPlayer(ctx, n.x, n.y, s, i === 0 ? '#3f7fba' : i % 2 ? '#c0392b' : '#7a9f4b', 'field',
-          { phase: n.phase, moving: true, face: n.face,
+          { phase: n.phase, moving: false, face: n.face,
             kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .22) : false });
         ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
         ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
@@ -289,7 +303,9 @@ class DogMode {
         const d = this.dogs[it.i];
         const v = U.clamp((d.y - q[0].y) / ((q[3].y - q[0].y) || 1), 0, 1);
         const s = this._scaleAt(v);
-        Yards.drawPlayer(ctx, d.x, d.y, s, '#d25743', 'field', { phase: d.phase, moving: true, face: d.face });
+        ctx.fillStyle = 'rgba(255,152,72,.9)';
+        ctx.beginPath(); ctx.ellipse(d.x, d.y + 3, 9 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
+        Yards.drawPlayer(ctx, d.x, d.y, s, '#d25743', 'field', { phase: d.phase, moving: d.moving, face: d.face });
         if (this.lastSteal >= 0) Yards.drawEmote(ctx, d.x, d.y - 160 * s, .85, '😎');
       }
     });

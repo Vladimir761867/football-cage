@@ -10,9 +10,10 @@
   let current = 'home';
   let activeMode = null, rafId = 0, lastT = 0, gesture = null, lastModeId = null;
   let hintTimer = 0, toastTimer = 0;
-  let difficulty = 'normal';
+  let difficulty = Difficulty.ids.includes(Save.data.difficulty) ? Save.data.difficulty : 'normal';
   let opponentCount = 1;
   let paused = false, artRevision = 0;
+  let matchIsCup = false;
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -21,7 +22,7 @@
     current = name;
     if (name !== 'match') stopLoop();
     if (name === 'home') { paintBg('#home-bg'); updateCoins(); updateYardLabel(); }
-    if (name === 'modes') { paintBg('#modes-bg'); updateCoins(); updateBests(); }
+    if (name === 'modes') { paintBg('#modes-bg'); updateCoins(); updateBests(); updateCompetition(); }
     if (name === 'shop') { paintBg('#shop-bg'); updateCoins(); renderShop(); }
     if (name === 'result') paintBg('#result-bg');
   }
@@ -41,7 +42,7 @@
     $('#home-yard-label').textContent = Yards.theme().name;
   }
   function updateBests() {
-    $('#best-dog').textContent = Save.data.best.dog ? `Рекорд: ${Save.data.best.dog} передач` : 'Ещё не играл';
+    $('#best-dog').textContent = Save.data.best.dog ? `Рекорд: ${Save.data.best.dog} очк.` : 'Ещё не играл';
     $('#best-square').textContent = Save.data.best.square ? `Рекорд: ${Save.data.best.square} очк.` : 'Ещё не играл';
     $('#best-am300').textContent = Save.data.best.am300 ? `Рекорд: ${Save.data.best.am300} очк.` : 'Ещё не играл';
     $('#best-cross').textContent = Save.data.best.cross ? `Рекорд: ${Save.data.best.cross} очк.` : 'Ещё не играл';
@@ -81,12 +82,16 @@
     cross: { cls: CrossMode, title: 'Навес' }
   };
 
-  function startMode(id) {
+  function startMode(id, inCup = false) {
+    matchIsCup = inCup;
+    const cup = inCup ? Cups.begin() : null;
+    if (inCup && !cup) return;
+    const matchDifficulty = cup ? Cups.difficulty(cup) : difficulty;
     Yards.syncBallToYard();
     paused = false;
     lastModeId = id;
     nav('match');
-    $('#match-title').textContent = MODES[id].title;
+    $('#match-title').textContent = cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : MODES[id].title;
     $('#match-hint').classList.remove('off');
     const canvas = $('#match-canvas');
     const r = canvas.getBoundingClientRect();
@@ -102,7 +107,8 @@
     gesture = new Gesture(canvas);
     const bgCache = {};
     const env = {
-      canvas, ctx, W, H, gesture, hud, difficulty, opponentCount,
+      canvas, ctx, W, H, gesture, hud, difficulty: matchDifficulty,
+      opponentCount: cup ? 1 : opponentCount, cup: !!cup,
       bgFor(key, painter) {
         if (!bgCache[key] || bgCache[key].revision !== artRevision) {
           const oc = document.createElement('canvas');
@@ -116,6 +122,7 @@
         ctx.drawImage(bgCache[key], 0, 0, W, H);
       },
       finish(result) {
+        if (cup) result.cupResult = Cups.settle(result);
         stopLoop();
         showResult(result);
       }
@@ -145,12 +152,45 @@
     nav('result');
     $('#result-title').textContent = res.title;
     $('#result-score').textContent = res.score;
+    $('#result-score').classList.toggle('cup-score', !!res.cupResult);
     $('#result-sub').textContent = res.sub || '';
     $('#result-moment').textContent = res.moment || '';
     $('#result-reward').innerHTML =
       `🪙 +${res.coins} жетонов${res.newBest ? ' &nbsp;•&nbsp; 🏆 Новый рекорд!' : ''}`;
+    $('#btn-rematch').textContent = '🔁 Ещё раз';
+    if (res.cupResult) {
+      const r = res.cupResult;
+      $('#result-title').textContent = r.status === 'won' ? 'Кубок твой!' : r.outcome === 'draw' ? 'Нужна переигровка' : r.outcome === 'loss' ? 'Кубок завершён' : 'Проходишь дальше!';
+      $('#result-sub').textContent = r.status === 'won' ? 'Три этапа пройдены · +120 жетонов за кубок' : r.outcome === 'draw' ? 'Равенство на границе прохода. Сыграем этот этап ещё раз.' : r.outcome === 'loss' ? `${Cups.stages[r.stage]}: проход не состоялся. Можно начать новый кубок.` : `Далее: ${Cups.stages[Cups.current().stage]} · сложность ${Difficulty.name(Cups.difficulty())}`;
+      $('#result-moment').textContent = Cups.current().history.map(h => `${Cups.stages[h.stage]}: ${h.outcome === 'win' ? '✓' : h.outcome === 'draw' ? '=' : '×'}`).join(' · ');
+      if (res.penalties) $('#result-score').textContent = `Штрафы ${res.penalties.join(' : ')}`;
+      $('#btn-rematch').textContent = r.status === 'ready' ? (r.outcome === 'draw' ? 'Переиграть этап' : 'Следующий этап') : 'Новый кубок';
+    }
     updateCoins();
     setTimeout(Sound.coin, 400);
+  }
+
+  function updateCompetition() {
+    $$('.difficulty-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.difficulty === difficulty);
+      b.setAttribute('aria-pressed', b.dataset.difficulty === difficulty);
+    });
+    const cfg = Difficulty.dog(difficulty);
+    $('#difficulty-detail').textContent = `${Difficulty.name(difficulty)} · Собачка ${cfg.passers}×${cfg.dogs} · ${cfg.hold.toFixed(1).replace('.', ',')} с на пас`;
+    const c = Cups.current(), pending = c && ['ready','playing'].includes(c.status);
+    $('#continue-cup').classList.toggle('hidden', !pending);
+    if (pending) $('#continue-cup').textContent = `Продолжить: ${MODES[c.mode].title} · ${Cups.stages[c.stage]}`;
+    $('#cup-medals').textContent = `Выиграно: квадрат ${Save.data.cupsWon.square} · американка ${Save.data.cupsWon.am300}`;
+  }
+  function openCup(mode) {
+    const c = Cups.current();
+    modal(`<h3>${mode === 'square' ? 'Кубок квадрата' : 'Кубок американки'}</h3>
+      <p>Отбор → полуфинал → финал. Соперники — боты. Сложность растёт до уровня 5.</p>
+      <p>${mode === 'square' ? '4 участника, до 90 секунд. В отборе и полуфинале нужно войти в двойку по наименьшему числу штрафов, в финале — стать первым. 10 штрафов — вылет. Равенство на границе прохода — переигровка.' : 'Три дуэли один на один до 300 очков. Победитель проходит дальше. При равном счёте игра продолжается.'}</p>
+      <p>Старт: ${Difficulty.name(difficulty)}. Награда за весь кубок: 120 жетонов.</p>
+      ${c && ['ready','playing'].includes(c.status) ? '<p>Новый кубок заменит текущий сохранённый маршрут.</p>' : ''}
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button><button class="btn btn-primary" id="start-cup">Начать кубок</button></div>`);
+    $('#start-cup').onclick = () => { Cups.start(mode,difficulty); closeModal(); startMode(mode,true); };
   }
 
   /* ---------- магазин ---------- */
@@ -299,7 +339,7 @@
       <h3>Настройки</h3>
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro"></button></div>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 11.11.2026 · 13</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 14</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -315,7 +355,7 @@
   function pauseModal() {
     modal(`
       <h3>Пауза</h3>
-      <p>Выйти из матча? Прогресс партии не сохранится.</p>
+      <p>${matchIsCup ? 'При возвращении текущий этап начнётся заново. Пройденные этапы сохранятся.' : 'Выйти из матча? Прогресс партии не сохранится.'}</p>
       <div class="modal-actions">
         <button class="btn btn-green" data-close>Продолжить</button>
         <button class="btn btn-paper" id="quit-match">Выйти</button>
@@ -329,13 +369,20 @@
   $('#btn-yards').onclick = () => { Sound.ui(); shopTab = 'yards'; syncTabs(); nav('shop'); };
   $('#btn-settings').onclick = settingsModal;
   $('#btn-pause').onclick = pauseModal;
-  $('#btn-rematch').onclick = () => { Sound.ui(); startMode(lastModeId); };
+  $('#btn-rematch').onclick = () => {
+    Sound.ui();
+    if (!matchIsCup) startMode(lastModeId);
+    else if (Cups.current().status === 'ready') startMode(Cups.current().mode,true);
+    else openCup(Cups.current().mode);
+  };
+  $$('[data-cup]').forEach(b => b.onclick = () => openCup(b.dataset.cup));
+  $('#continue-cup').onclick = () => startMode(Cups.current().mode,true);
   $('#btn-result-menu').onclick = () => { Sound.ui(); nav('modes'); };
   $$('[data-nav]').forEach(b => b.onclick = () => { Sound.ui(); nav(b.dataset.nav); });
   $$('.mode-card').forEach(b => b.onclick = () => { Sound.ui(); startMode(b.dataset.mode); });
   $$('.difficulty-btn').forEach(b => b.onclick = () => {
     Sound.ui(); difficulty = b.dataset.difficulty;
-    $$('.difficulty-btn').forEach(x => x.classList.toggle('active', x === b));
+    Save.data.difficulty = difficulty; Save.save(); updateCompetition();
   });
   $$('.opponents-btn').forEach(b => b.onclick = () => {
     Sound.ui(); opponentCount = Number(b.dataset.opponents);

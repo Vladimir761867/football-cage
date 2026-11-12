@@ -4,6 +4,7 @@ class CrossMode {
   constructor(env) {
     this.env = env;
     const { W, H } = env;
+    this.level = Difficulty.index(env.difficulty);
     const atlasCourt = Boolean(Yards.theme().atlas);
     const goalW = atlasCourt ? Math.min(W * .65, H * .22) : W * .6;
     this.goal = Yards.artGoal(W, H) || { x: (W - goalW) / 2, y: H * .39,
@@ -85,7 +86,7 @@ class CrossMode {
     this.landing = { x: W * (.42 + Math.random() * .16), y: H * (.66 + Math.random() * .07) };
     this._roles();
     const r = this.roles;
-    this.combo = { order: [r.S, r.a, r.b], step: 0, holder: r.S, ball: null, clock: 0, waitT: .55, limit: 2.6 };
+    this.combo = { order: [r.S, r.a, r.b], step: 0, holder: r.S, ball: null, clock: 0, waitT: .55, limit: [3.7,3.1,2.6,2.25,1.95][this.level] };
     this.state = 'combo';
     this.dive = 0;
     this.keeperTarget = this.goal.x + this.goal.w / 2;
@@ -123,7 +124,7 @@ class CrossMode {
     const b = this.players[this.roles.b];
     b.kickT = .25;
     this.state = 'serve';
-    this.flight = { t: 0, dur: 1.5, from: { x: b.x, y: b.y - 30 } };
+    this.flight = { t: 0, dur: [2.0,1.75,1.5,1.35,1.2][this.level], from: { x: b.x, y: b.y - 30 } };
     this.env.hud.hint(this.shooterIndex === 0 ? 'Навес! Ударь в нужный момент: проведи к левому или правому углу!' :
       this.keeperIndex === 0 ? 'Ты в воротах: проведи в сторону удара!' : `${this._name(this.shooterIndex)} бьёт. Следи за навесом`);
     Sound.pass();

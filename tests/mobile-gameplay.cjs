@@ -4,18 +4,18 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 
-function runtime() {
+function runtime(storage = new Map()) {
   const context = vm.createContext({
     Image: class { addEventListener() {} }, window: { dispatchEvent() {} },
-    localStorage: { getItem() { return null; }, setItem() {} },
+    localStorage: { getItem(key) { return storage.get(key) || null; }, setItem(key, value) { storage.set(key, value); } },
     performance: { now: () => 100 },
     Sound: new Proxy({}, { get: () => () => {} }),
     Math: Object.assign(Object.create(Math), { random: () => .5 })
   });
-  for (const file of ['save', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
+  for (const file of ['save', 'competition', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js', file + '.js'), 'utf8'), context);
   }
-  return vm.runInContext('({Save,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
+  return vm.runInContext('({Save,Difficulty,Cups,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
 }
 function env() {
   return { W: 520, H: 1125, difficulty: 'normal', opponentCount: 3, gesture: {},
@@ -108,4 +108,54 @@ test('all 15 photographed goal mouths stay visible and both goal modes share the
       assert.deepEqual(new CrossMode(e).goal,g);
     }
   }
+});
+
+test('square cup resumes after reload, replays a tie at the cutoff, and pays the trophy once', () => {
+  const storage = new Map();
+  let { Cups } = runtime(storage);
+  Cups.start('square','normal');
+  Cups.begin();
+  assert.equal(Cups.settle({penalties:[2,1,3,4]}).outcome,'win');
+  const restored = runtime(storage);
+  Cups = restored.Cups;
+  assert.equal(Cups.current().stage,1);
+  assert.equal(Cups.difficulty(),'hard');
+  Cups.begin();
+  assert.equal(Cups.settle({penalties:[2,1,2,4]}).outcome,'draw');
+  assert.equal(Cups.current().stage,1);
+  Cups.begin(); Cups.settle({penalties:[2,1,3,4]});
+  assert.equal(Cups.difficulty(),'expert');
+  Cups.begin();
+  assert.equal(Cups.settle({penalties:[1,2,3,4]}).status,'won');
+  assert.equal(Cups.settle({penalties:[1,2,3,4]}),null);
+  assert.equal(restored.Save.data.coins,120);
+  assert.equal(restored.Save.data.cupsWon.square,1);
+});
+
+test('american cup ends after a lost duel and does not award a trophy', () => {
+  const { Cups, Save } = runtime();
+  Cups.start('am300','easy');
+  Cups.begin(); Cups.settle({won:true,score:'350 : 285'});
+  Cups.begin();
+  assert.equal(Cups.settle({won:false,score:'275 : 325'}).status,'lost');
+  assert.equal(Cups.begin(),null);
+  assert.equal(Save.data.cupsWon.am300,0);
+});
+
+test('dog pace ramps actual defender movement after successful passes', () => {
+  const { DogMode } = runtime();
+  function moved(passes, difficulty) {
+    const mode = new DogMode({...env(),difficulty});
+    mode.passes = passes;
+    mode._giveBall(0);
+    const d = mode.dogs[0], start = {...d};
+    mode.update(.05);
+    return { distance:Math.hypot(d.x-start.x,d.y-start.y), level:mode.paceLevel };
+  }
+  const initial = moved(0,'beginner');
+  const later = moved(32,'beginner');
+  assert.equal(initial.level,1);
+  assert.equal(later.level,5);
+  assert.ok(later.distance > initial.distance * 1.4);
+  assert.ok(moved(0,'expert').distance > initial.distance * 2);
 });

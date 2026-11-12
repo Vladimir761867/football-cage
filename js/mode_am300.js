@@ -5,11 +5,7 @@ class Am300Mode {
     this.env = env;
     const { W, H } = env;
     this.difficulty = env.difficulty || 'normal';
-    this.cfg = {
-      easy:   { spread: .15, window: .25 },
-      normal: { spread: .30, window: .16 },
-      hard:   { spread: .48, window: .09 }
-    }[this.difficulty];
+    this.cfg = Difficulty.american(this.difficulty);
     const atlasCourt = Boolean(Yards.theme().atlas);
     const goalW = atlasCourt ? Math.min(W * .65, H * .22) : W * .72;
     this.goal = Yards.artGoal(W, H) || { x: (W - goalW) / 2, y: H * .42,
@@ -171,7 +167,8 @@ class Am300Mode {
     if (!this.opponents.length) { this._finish(this.you >= 300); return; }
     this.state = 'bot';
     this.env.hud.toast('Ход соперников…', '');
-    const table = [[0, .22], [25, .33], [50, .20], [75, .15], [100, .10]];
+    const rest = 1 - this.cfg.miss;
+    const table = [[0, this.cfg.miss], [25, rest * .42], [50, rest * .26], [75, rest * .19], [100, rest * .13]];
     this.botQueue = [];
     this.opponents.forEach((_, id) => {
       for (let i = 0; i < 5; i++) {
@@ -374,6 +371,7 @@ class Am300Mode {
     const coins = Math.round(this.you / 10) + (won ? 30 : 0) + (newBest ? 15 : 0);
     Save.addCoins(coins);
     this.env.finish({
+      won,
       title: !this.opponents.length ? 'Тренировка окончена' : won ? 'Победа!' : 'Соперник оказался точнее',
       score: this.opponents.length ? `${this.you} : ${top}` : `${this.you} очк.`,
       sub: !this.opponents.length ? 'Удары по раме и углам' : won ? `Ты первым дошёл до 300 (${this.round} кр.)` : 'Целься в перекладину и девятку',

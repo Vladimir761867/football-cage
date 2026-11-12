@@ -8,6 +8,9 @@ const Save = (() => {
     ownedBalls: ['classic'],
     selectedBall: 'classic',
     ballsByEra: {},
+    difficulty: 'normal',
+    cup: null,
+    cupsWon: { square: 0, am300: 0 },
     best: { dog: 0, square: 0, am300: 0, cross: 0 },
     tutorialSeen: { dog: false, square: false, am300: false, cross: false },
     settings: { sound: true, vibro: true }

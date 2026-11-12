@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261111-13">
+<link rel="stylesheet" href="css/style.css?v=20261112-14a">
 </head>
 <body>
 <div id="app">
@@ -41,14 +41,26 @@
     <div class="screen-inner">
       <div class="top-bar">
         <button class="icon-btn" data-nav="home">←</button>
-        <div class="paper-title">Выбор режима</div>
+        <div class="paper-title">Играть</div>
         <div class="coins-chip coins-small" id="modes-coins">🪙 <b>0</b></div>
       </div>
       <div class="difficulty-picker">
         <span>Сложность</span>
-        <button class="difficulty-btn" data-difficulty="easy">Двор</button>
-        <button class="difficulty-btn active" data-difficulty="normal">Коробка</button>
-        <button class="difficulty-btn" data-difficulty="hard">Турнир</button>
+        <button class="difficulty-btn" data-difficulty="beginner" aria-label="Уровень 1: Знакомство">1</button>
+        <button class="difficulty-btn" data-difficulty="easy" aria-label="Уровень 2: Разминка">2</button>
+        <button class="difficulty-btn active" data-difficulty="normal" aria-label="Уровень 3: Двор">3</button>
+        <button class="difficulty-btn" data-difficulty="hard" aria-label="Уровень 4: Мастер">4</button>
+        <button class="difficulty-btn" data-difficulty="expert" aria-label="Уровень 5: Легенда">5</button>
+      </div>
+      <p class="difficulty-detail" id="difficulty-detail"></p>
+      <div class="cup-panel">
+        <strong>🏆 Кубки двора</strong><span>3 этапа · против ботов · прогресс сохраняется</span>
+        <div class="cup-actions">
+          <button class="btn btn-paper" data-cup="square">Кубок квадрата</button>
+          <button class="btn btn-paper" data-cup="am300">Кубок американки</button>
+        </div>
+        <button class="btn btn-green hidden" id="continue-cup"></button>
+        <span id="cup-medals"></span>
       </div>
       <div class="opponents-picker">
         <span>Американка: соперники</span>
@@ -60,22 +72,22 @@
       <div class="mode-cards">
         <button class="mode-card" data-mode="dog">
           <div class="mode-card-name">Собачка</div>
-          <div class="mode-card-desc">Игроки передают мяч, водящий пытается отнять. Сложность меняет число водящих и пасующих.</div>
+          <div class="mode-card-desc">Быстрые пасы под прессингом, 4×1 или 5×2.</div>
           <div class="mode-card-best" id="best-dog"></div>
         </button>
         <button class="mode-card" data-mode="square">
           <div class="mode-card-name">Квадрат</div>
-          <div class="mode-card-desc">Четыре квадранта, отскоки и штрафные очки. 10 штрафов — вылет. Побеждает последний.</div>
+          <div class="mode-card-desc">Отбей до второго отскока. На 10 штрафах — вылет.</div>
           <div class="mode-card-best" id="best-square"></div>
         </button>
         <button class="mode-card" data-mode="am300">
           <div class="mode-card-name">Американка 300</div>
-          <div class="mode-card-desc">Штанга, перекладина, девятка. Играй против 1–3 соперников.</div>
+          <div class="mode-card-desc">Попадай в раму и углы. Цель — 300 очков.</div>
           <div class="mode-card-best" id="best-am300"></div>
         </button>
         <button class="mode-card" data-mode="cross">
           <div class="mode-card-name">Навес</div>
-          <div class="mode-card-desc">Играют все: подающий, бьющий и вратарь. Промахнулся — встань на ворота.</div>
+          <div class="mode-card-desc">Разыграй навес и забей. Промах — в ворота.</div>
           <div class="mode-card-best" id="best-cross"></div>
         </button>
       </div>
@@ -145,14 +157,15 @@
   </div>
 
 </div>
-<script src="js/sound.js?v=20261111-13"></script>
-<script src="js/save.js?v=20261111-13"></script>
-<script src="js/yards.js?v=20261111-13"></script>
-<script src="js/gesture.js?v=20261111-13"></script>
-<script src="js/mode_dog.js?v=20261111-13"></script>
-<script src="js/mode_square.js?v=20261111-13"></script>
-<script src="js/mode_am300.js?v=20261111-13"></script>
-<script src="js/mode_cross.js?v=20261111-13"></script>
-<script src="js/main.js?v=20261111-13"></script>
+<script src="js/sound.js?v=20261112-14a"></script>
+<script src="js/save.js?v=20261112-14a"></script>
+<script src="js/competition.js?v=20261112-14a"></script>
+<script src="js/yards.js?v=20261112-14a"></script>
+<script src="js/gesture.js?v=20261112-14a"></script>
+<script src="js/mode_dog.js?v=20261112-14a"></script>
+<script src="js/mode_square.js?v=20261112-14a"></script>
+<script src="js/mode_am300.js?v=20261112-14a"></script>
+<script src="js/mode_cross.js?v=20261112-14a"></script>
+<script src="js/main.js?v=20261112-14a"></script>
 </body>
 </html>
