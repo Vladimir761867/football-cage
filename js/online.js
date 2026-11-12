@@ -11,11 +11,11 @@ const OnlineRooms = {
     }
     return url.origin;
   },
-  async request(origin, path, {body,token,keepalive=false} = {}) {
+  async request(origin, path, {body,token,keepalive=false,resource='rooms'} = {}) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 6000);
     try {
-      const response = await fetch(origin + '/api/rooms' + path,{
+      const response = await fetch(origin + '/api/' + resource + path,{
         method:body === undefined ? 'GET' : 'POST',
         headers:{
           ...(token ? {Authorization:'Bearer '+token} : {}),
@@ -26,7 +26,7 @@ const OnlineRooms = {
       });
       if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('По этому адресу нет сервера комнат');
       const value = await response.json();
-      if (!response.ok) throw new Error(value.error || 'Сервер не принял действие');
+      if (!response.ok) throw Object.assign(new Error(value.error || 'Сервер не принял действие'),{status:response.status});
       return value;
     } catch (e) {
       if (e.name === 'AbortError' || e instanceof TypeError) throw new Error('Сервер комнат недоступен');
@@ -34,8 +34,10 @@ const OnlineRooms = {
     } finally { clearTimeout(timer); }
   },
   check(room) {
-    const count = room?.mode === 'am300' ? 2 : room?.mode === 'square' ? 4 : 0;
-    if (!count || room.capacity !== count || !/^[A-F0-9]{6}$/.test(room.code) ||
+    const count = room?.capacity;
+    const format = room?.mode === 'am300' ? count === (room.tournament ? 4 : 2) :
+      room?.mode === 'square' && (room.tournament ? count === 4 : [2,4].includes(count));
+    if (!format || !/^[A-F0-9]{6}$/.test(room.code) ||
         !['lobby','playing','done','cancelled'].includes(room.phase) ||
         !Array.isArray(room.seats) || room.seats.length !== count ||
         !Array.isArray(room.scores) || room.scores.length !== count || !room.scores.every(Number.isFinite) ||
@@ -58,35 +60,85 @@ const OnlineRooms = {
         cup.history.length > 3 || !cup.history.every(scorePair))) {
       throw new Error('Сервер прислал неверный счёт кубка');
     }
+    const roster = room.roster || room.seats.map((_,i) => i);
+    const validRoster = (seats,len) => Array.isArray(seats) && seats.length === len &&
+      new Set(seats).size === len && seats.every(i => Number.isInteger(i) && i >= 0 && i < count);
+    if (!validRoster(roster,room.mode === 'am300' ? 2 : count) || !roster.includes(room.turn)) {
+      throw new Error('Сервер прислал неверный состав матча');
+    }
+    const tournament = room.tournament;
+    if (tournament && (![0,1,2].includes(tournament.stage) || !Array.isArray(tournament.history) ||
+        tournament.history.length > 3 || !Array.isArray(tournament.points) || tournament.points.length !== count ||
+        !tournament.points.every(Number.isFinite) || (room.mode === 'square' && room.phase === 'done' && !validRoster(tournament.order,count)) ||
+        !tournament.history.every(match =>
+          validRoster(match.roster,roster.length) && match.roster.includes(match.winner) &&
+          Array.isArray(match.scores) && match.scores.length === count && match.scores.every(Number.isFinite)))) {
+      throw new Error('Сервер прислал неверный счёт турнира');
+    }
+    if (room.yard && (!/^[a-f0-9]{24}$/.test(room.yard.code) || !room.yard.preset || !room.yard.goal ||
+        !['x','y','w','h'].every(key => Number.isFinite(room.yard.goal[key])))) {
+      throw new Error('Сервер прислал неверные параметры двора');
+    }
+    room.roster = roster;
     return room;
   },
   memoryKey(origin,code) { return 'football-room:' + origin + ':' + code; },
-  async enter(origin,mode,code,{team='',cup=false} = {}) {
+  async enter(origin,mode,code,{team='',cup=false,size,tournament=false,yard} = {}) {
     if (code) {
       let previous;
       try { previous = JSON.parse(sessionStorage.getItem(this.memoryKey(origin,code))); } catch { /* storage unavailable */ }
       if (previous?.token) {
         try {
           const room = this.check(await this.request(origin,'/'+code,{token:previous.token}));
-          if (room.phase === 'lobby' || room.phase === 'playing') return {...previous,room,origin};
+          if (room.phase !== 'cancelled' && (!yard || room.yard?.code === yard.code)) return {...previous,room,origin,yard};
         } catch { /* previous seat no longer available */ }
       }
     }
     const outfit = Wardrobe.selected('90').id;
-    const data = code ? await this.request(origin,'/'+code+'/join',{body:{outfit,team}})
-      : await this.request(origin,'',{body:{mode,outfit,team,cup}});
+    const member = yard ? {yard:yard.code,yardToken:yard.token} : {};
+    const data = code ? await this.request(origin,'/'+code+'/join',{body:{outfit,team,...member}})
+      : await this.request(origin,'',{body:{mode,outfit,team,cup,size,tournament,...member}});
     this.check(data.room);
     if (!/^[a-f0-9]{48}$/.test(data.token) || !Number.isInteger(data.seat) || !data.room.seats[data.seat]) {
       throw new Error('Сервер не подтвердил место в комнате');
     }
     try { sessionStorage.setItem(this.memoryKey(origin,data.room.code),JSON.stringify({token:data.token,seat:data.seat})); } catch { /* storage unavailable */ }
-    return {...data,origin};
+    return {...data,origin,yard};
   },
-  link(session) {
+  inviteLink(origin,room,court) {
     const url = new URL(location.href); url.search = ''; url.hash = '';
-    url.searchParams.set('room',session.room.code);
-    if (session.origin !== location.origin) url.searchParams.set('server',session.origin);
+    if (room) url.searchParams.set('room',room);
+    if (court) url.searchParams.set('court',court);
+    if (origin !== location.origin) url.searchParams.set('server',origin);
     return url.href;
+  },
+  link(session) { return this.inviteLink(session.origin,session.room.code,session.room.yard?.code); },
+  format(room) {
+    if (room.tournament) return room.mode === 'square' ? 'Турнир квадрата' : 'Турнир американки';
+    if (room.cup) return 'Кубок американки';
+    if (room.mode === 'am300') return 'Американка 1×1';
+    return room.capacity === 2 ? 'Квадрат 1×1' : 'Квадрат на четверых';
+  }
+};
+
+const OnlineYards = {
+  key(origin,code) { return 'football-yard:'+origin+':'+code; },
+  token(origin,code) {
+    try { return localStorage.getItem(this.key(origin,code)); } catch { return null; }
+  },
+  async enter(origin,{code,name,team,preset}) {
+    let token = code ? this.token(origin,code) : null;
+    if (!token) {
+      const joined = await OnlineRooms.request(origin,code ? '/'+code+'/join' : '',
+        {resource:'yards',body:code ? {team} : {name,team,preset}});
+      token = joined.token;
+      code = joined.yard.code;
+      try { localStorage.setItem(this.key(origin,code),token); } catch { /* private browsing */ }
+    }
+    const yard = await OnlineRooms.request(origin,'/'+code,{resource:'yards',token});
+    Save.data.onlineYard = {code,origin};
+    Save.save();
+    return {...yard,origin,token};
   }
 };
 
@@ -98,6 +150,7 @@ class OnlineMode {
     this.closed = false;
     this.pollIn = 0;
     this.pending = false;
+    this.polling = false;
     this.failures = 0;
     this.drag = null;
     this.startedAt = 0;
@@ -116,9 +169,10 @@ class OnlineMode {
     if (this.room.mode === 'square') env.gesture.onTap = (point,radius) => {
       if (!this.myTurn() || this.pending) return;
       const targets = this.room.seats.map((occupied,i) => occupied && i !== this.seat && this.room.scores[i] < 10 ? i : -1).filter(i => i >= 0);
-      const id = U.tapPlayer(point,radius,targets,i => RoomField.places[i],66);
+      const places = RoomField.squarePlaces(this.room.capacity);
+      const id = U.tapPlayer(point,radius,targets,i => places[i],66);
       if (id < 0) return;
-      const pass = U.aimedPass(RoomField.places[this.seat],RoomField.places[id],RoomField.W*.24);
+      const pass = U.aimedPass(places[this.seat],places[id],RoomField.W*.24);
       this.send('/play',{version:this.room.version,dx:Math.cos(pass.angle)*pass.len,dy:Math.sin(pass.angle)*pass.len,phase:0});
     };
   }
@@ -135,20 +189,26 @@ class OnlineMode {
     this.offset = room.serverNow - Date.now();
     const hud = this.env.hud;
     if (room.phase !== before?.phase) {
-      this.env.choose(room.phase === 'lobby' ? [{text:'Ссылка на комнату',action:() => this.env.invite(this.session)}] : []);
+      const actions = [];
+      if (room.phase === 'lobby') actions.push({text:'Пригласить друзей',action:() => this.env.invite(this.session)});
+      if (room.tournament && room.phase === 'playing') actions.push({text:'Таблица турнира',action:() => this.env.standings(this.room)});
+      this.env.choose(actions);
     }
     if (room.phase === 'lobby') {
       hud.hint(`Комната ${room.code} · ${room.seats.filter(Boolean).length}/${room.capacity}. Матч начнётся, когда все войдут.`);
       hud.setTimer('Ждём');
-      hud.setPills([]);
+      if (room.version !== before?.version) hud.setPills(room.seats.map((occupied,i) => ({
+        id:'room'+i,lbl:occupied ? this.team(i) : `Игрок ${i+1}`,val:occupied ? '✓' : '…'
+      })));
     } else if (room.phase === 'playing' || room.phase === 'done') {
       const score = room.cup?.points || room.scores;
       const value = i => room.mode === 'square' ? score[i] + '/10' : score[i];
-      if (!this.pillsSet) {
-        const pills = score.map((_,i) => ({id:'room'+i,lbl:this.team(i),val:value(i)}));
+      const rosterKey = room.roster.join(',');
+      if (rosterKey !== this.pillsSet) {
+        const pills = room.roster.map(i => ({id:'room'+i,lbl:this.team(i),val:value(i)}));
         if (room.cup) pills.push({id:'sets',lbl:'Сеты',val:room.cup.wins.join(':')});
         hud.setPills(pills);
-        this.pillsSet = true;
+        this.pillsSet = rosterKey;
       } else {
         score.forEach((_,i) => hud.setPill('room'+i,value(i)));
         if (room.cup) hud.setPill('sets',room.cup.wins.join(':'));
@@ -161,8 +221,9 @@ class OnlineMode {
     if (room.phase === 'done' || room.phase === 'cancelled') this.endAt = this.endAt || performance.now()+650;
   }
   async send(action = '',body) {
-    if (this.pending || this.closed) return;
-    this.pending = true;
+    const flag = action ? 'pending' : 'polling';
+    if (this[flag] || this.closed) return;
+    this[flag] = true;
     try {
       const next = await OnlineRooms.request(this.session.origin,'/'+this.room.code+action,{body,token:this.session.token});
       this.accept(OnlineRooms.check(next));
@@ -170,31 +231,39 @@ class OnlineMode {
     } catch (e) {
       if (!this.closed) {
         this.env.hud.toast(e.message,'bad');
-        if (++this.failures >= 4 || e.message.includes('не найдена')) {
+        if ([401,404].includes(e.status)) {
           this.accept({...this.room,phase:'cancelled',serverNow:this.room.serverNow});
+        } else if (!action) {
+          this.failures++;
+          this.pollIn = Math.min(5,.7*this.failures);
         }
       }
-    } finally { this.pending = false; }
+    } finally { this[flag] = false; }
   }
   update(dt) {
     if (this.endAt && performance.now() >= this.endAt) {
       const won = this.room.winner === this.seat;
       const cup = this.room.cup;
+      const tournament = this.room.tournament;
+      const tournamentResult = tournament && this.room.phase === 'done';
       this.env.finish({aborted:this.room.phase === 'cancelled', title:this.room.phase === 'cancelled' ? 'Комната закрыта' :
         won ? 'Победа!' : cup && this.room.winner === null ? 'Ничья' : 'Матч окончен',
-        score:(cup?.wins || this.room.scores).join(' : '),
-        sub:cup ? 'Счёт по сетам · '+cup.history.map(points => points.join(':')).join(' · ') :
+        score:(cup?.wins || (tournamentResult && this.room.mode === 'square' ? tournament.order.map(i => tournament.points[i]) :
+          this.room.roster.map(i => this.room.scores[i]))).join(' : '),
+        sub:tournamentResult ? `Победитель турнира: ${this.team(this.room.winner)}` :
+          cup ? 'Счёт по сетам · '+cup.history.map(points => points.join(':')).join(' · ') :
           this.room.mode === 'square' ? 'Штрафы по порядку игроков' : 'Очки по порядку игроков', coins:0});
       return;
     }
     this.pollIn -= dt;
-    if (this.pollIn <= 0) { this.pollIn = .32; this.send(); }
+    if (this.pollIn <= 0) { this.pollIn = this.room.phase === 'lobby' ? .75 : .32; this.send(); }
     if (this.room.phase === 'playing') {
       const turn = this.room.turn;
       this.env.hud.setTimer(Math.max(0,Math.ceil((this.room.deadline-this.time())/1000)));
       if (this.lastTurn !== turn || this.lastVersion !== this.room.version) {
         this.lastTurn = turn; this.lastVersion = this.room.version;
-        const prefix = this.room.cup ? `Сет ${this.room.cup.set}/3 · ` : '';
+        const prefix = this.room.tournament ? RoomField.stageName(this.room.mode,this.room.tournament.stage)+' · ' :
+          this.room.cup ? `Сет ${this.room.cup.set}/3 · ` : '';
         const hint = turn === this.seat
           ? this.room.mode === 'square' ? 'Твой мяч. Тап или свайп к сопернику.' : 'Твой удар. Свайп вверх к цели.'
           : `Ход: ${this.team(turn)}`;
@@ -204,19 +273,19 @@ class OnlineMode {
   }
   draw(ctx) {
     const {W,H} = this.env;
-    const g = RoomField.goal;
+    const g = this.room.yard?.goal || RoomField.goal;
     const square = this.room.mode === 'square';
     this.env.bgFor('room', bg => {
       if (square) {
         Yards.paintCourt(bg,W,H,{x:40,y:H*.53,w:W-80,h:H*.35});
-        Yards.drawCourtMarks(bg,RoomField.quad,{outer:true});
+        Yards.drawCourtMarks(bg,RoomField.quad,{outer:true,halves:this.room.capacity === 2});
       } else Yards.paintGoalScene(bg,W,H,g);
     });
     if (!square) {
       const top = g.y-g.h, radius = g.w*.08;
       ctx.save(); ctx.fillStyle='#ffe8a5'; ctx.strokeStyle='#ffe8a5';
       ctx.font='800 13px Rubik'; ctx.textAlign='center';
-      ctx.fillText('ПЕРЕКЛАДИНА 100',g.x+g.w/2,top-11);
+      Yards.drawFieldText(ctx,'ПЕРЕКЛАДИНА 100',g.x+g.w/2,top-11);
       ctx.fillText('50',g.x-16,top+g.h*.56); ctx.fillText('50',g.x+g.w+16,top+g.h*.56);
       ctx.lineWidth=2; ctx.setLineDash([5,6]);
       for (const x of [g.x+radius*.8,g.x+g.w-radius*.8]) {
@@ -228,8 +297,8 @@ class OnlineMode {
     const elapsed = this.animate ? (performance.now()-this.animate.start)/550 : 1;
     const turn = this.room.turn;
     const colors = ['#3f7fba','#c0392b','#7a9f4b','#4e9fd1'];
-    const positions = square ? RoomField.places : [{x:W*.34,y:H*.84},{x:W*.75,y:H*.76}];
-    const order = square ? [2,3,0,1] : [1,0];
+    const positions = square ? RoomField.squarePlaces(this.room.capacity) : [{x:W*.34,y:H*.84},{x:W*.75,y:H*.76}];
+    const order = square && this.room.capacity === 4 ? [2,3,0,1] : [...this.room.roster].reverse();
     for (const i of order) {
       if (!this.room.seats[i] || (square && this.room.scores[i] >= 10)) continue;
       const p = square ? positions[i] : positions[i === turn ? 0 : 1];
@@ -240,7 +309,7 @@ class OnlineMode {
       Yards.drawPlayer(ctx,p.x,p.y,square ? .71 : .88,colors[i],'field',
         { me:i===this.seat, outfit:Wardrobe.roomOutfit(this.room.outfits?.[i]), moving:false, kick:elapsed<.4 && this.animate?.seat===i });
       ctx.fillStyle = '#fff3d4'; ctx.font = '800 13px Rubik'; ctx.textAlign = 'center';
-      ctx.fillText(i === this.seat ? 'ТЫ' : i+1,p.x,p.y+20);
+      Yards.drawFieldText(ctx,i === this.seat ? 'ТЫ' : i+1,p.x,p.y+20);
     }
     let ball = square ? {...positions[turn]} : RoomField.ball;
     if (square && this.room.phase === 'playing') {

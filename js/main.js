@@ -140,7 +140,7 @@
     const collection = options.tutorial || options.online || options.practice === 'solo' ? null : Collections.match();
     const matchDifficulty = cup ? Cups.difficulty(cup) : options.tutorial ? 'beginner' : challenge?.difficulty || options.difficulty || difficulty;
     Yards.syncBallToYard();
-    if (options.online) Yards.setScene(YARDS.ru90_1);
+    if (options.online) Yards.setScene(options.online.room.yard ? Yards.editedTheme(options.online.room.yard.preset) : YARDS.ru90_1);
     else if (challenge) Yards.setScene(challenge.custom ? Yards.editedTheme(challenge.custom) : YARDS[challenge.yard]);
     else Yards.setScene(Yards.theme());
     paused = false;
@@ -149,7 +149,7 @@
     clearTimeout(hintTimer); clearTimeout(toastTimer);
     $('#match-toast').textContent = '';
     $('#match-toast').className = 'match-toast';
-    $('#match-title').textContent = options.online?.room.cup ? 'Кубок команд' : options.practice === 'keeper' ? 'Удары по воротам' :
+    $('#match-title').textContent = options.online ? OnlineRooms.format(options.online.room) : options.practice === 'keeper' ? 'Удары по воротам' :
       options.practice === 'solo' ? 'Удары по мишеням' :
       cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : challenge?.title || MODES[id].title;
     $('#match-hint').classList.remove('off');
@@ -167,7 +167,7 @@
       opponentCount: challenge || options.tutorial || options.practice ? 0 : cup || options.quick ? 1 : opponentCount,
       cup: !!cup, cupStage: cup?.stage, tutorial: options.tutorial, practice: options.practice,
       attackOnly: id === 'cross',
-      challenge, quick: options.quick, rotateDog: options.rotateDog, online:options.online, invite:shareRoom,
+      challenge, quick: options.quick, rotateDog: options.rotateDog, online:options.online, invite:shareRoom, standings:showTournament,
       random: challenge ? Activities.random(challenge.key) : Math.random,
       choose,
       progress(event) {
@@ -205,6 +205,7 @@
         ctx.drawImage(bgCache[key], 0, 0, W, H);
       },
       finish(result) {
+        if (!$('#modal-wrap').classList.contains('hidden')) closeModal();
         if (progress) {
           result.won = progress.score >= challenge.goal;
           if (cupTrial) {
@@ -250,7 +251,7 @@
     const now = performance.now();
     const dt = Math.min(.05, (now - lastT) / 1000);
     lastT = now;
-    if (!activeMode || paused || document.hidden) return;
+    if (!activeMode || (paused && !matchOptions.online) || document.hidden) return;
     matchElapsed += dt;
     activeMode.update(dt);
     if (!activeMode) return; // finish мог сработать внутри update
@@ -436,6 +437,23 @@
   function shareRoom(session) {
     copyDialog('Приглашение в комнату',`Код ${session.room.code}. Отправь ссылку всем участникам.`,OnlineRooms.link(session));
   }
+  function showTournament(room) {
+    modal('<h3>Таблица турнира</h3><ul id="tournament-rows"></ul><button class="btn btn-primary" data-close>К матчу</button>');
+    const rows = $('#tournament-rows');
+    const add = text => {
+      const li = document.createElement('li');
+      li.textContent = text;
+      rows.append(li);
+    };
+    const team = i => room.teams?.[i] || `Игрок ${i+1}`;
+    if (room.mode === 'square') {
+      room.tournament.points.map((points,i) => ({points,i})).sort((a,b) => b.points-a.points)
+        .forEach(({points,i}) => add(`${team(i)} · ${points} очк.`));
+    } else {
+      room.tournament.history.forEach((match,i) => add(`${RoomField.stageName(room.mode,i)} · ${match.roster.map(team).join(' — ')} · ${match.roster.map(seat => match.scores[seat]).join(':')}`));
+      add(`${RoomField.stageName(room.mode,room.tournament.stage)} · ${room.roster.map(team).join(' — ')}`);
+    }
+  }
   function copyDialog(title,description,link,onBack) {
     modal(`<h3>${title}</h3><p>${description}</p>
       <label class="room-fields">Ссылка<input class="share-link" id="share-link" readonly></label>
@@ -449,26 +467,34 @@
   }
 
   function onlineLobby(invite = {}) {
+    const yard = invite.yard;
     modal(`<h3>С друзьями</h3>
+      ${yard ? '<p id="yard-team"></p><div class="feature-stack"><button class="btn btn-green" id="yard-invite">Пригласить во двор</button><button class="btn btn-paper" id="yard-rating">Рейтинг двора</button><button class="btn btn-paper" id="yard-refresh">Обновить комнаты</button></div><div id="yard-rooms" class="feature-stack"></div>' : ''}
       <div class="room-fields">
-        <label>Название команды<input id="room-team" maxlength="24" placeholder="Например, Соседи" autocomplete="off"></label>
-        <label>Код комнаты<input id="room-code" maxlength="6" autocomplete="off" placeholder="6 символов"></label>
-        <label>Адрес сервера комнат<input id="room-origin" type="url" placeholder="https://…" autocomplete="off"></label>
+        <label ${yard ? 'hidden' : ''}>Название команды<input id="room-team" maxlength="24" placeholder="Например, Соседи" autocomplete="off"></label>
+        <label>Код комнаты<input id="room-code" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="6 символов"></label>
+        <label ${yard || document.querySelector('meta[name="football-rooms-origin"]')?.content ? 'hidden' : ''}>Адрес сервера комнат<input id="room-origin" type="url" placeholder="https://…" autocomplete="off"></label>
       </div>
       <p class="feature-status" id="room-status" role="status"></p>
       <div class="feature-stack"><button class="btn btn-green" id="join-room">Войти по коду</button>
-        <button class="btn btn-primary" data-create-room="am300">Создать дуэль · 2 команды</button>
-        <button class="btn btn-paper" data-create-room="square">Создать квадрат · 4 команды</button>
-        <button class="btn btn-paper" data-create-room="cup">Кубок · до трёх сетов</button>
+        <button class="btn btn-primary" data-create-room="am300">Американка 1×1</button>
+        <button class="btn btn-paper" data-create-room="square-2">Квадрат 1×1</button>
+        <button class="btn btn-paper" data-create-room="square-4">Квадрат на четверых</button>
+        <details class="room-tournaments"><summary>Турниры</summary><div class="feature-stack">
+          <button class="btn btn-paper" data-create-room="cup">Кубок американки · двое</button>
+          <button class="btn btn-paper" data-create-room="am300-tournament">Турнир американки · четверо</button>
+          <button class="btn btn-paper" data-create-room="square-tournament">Турнир квадрата · четверо</button>
+        </div></details>
+        <button class="btn btn-paper" id="btn-online-yard">${yard ? 'Создать другой двор' : 'Мой двор онлайн'}</button>
         <button class="btn btn-paper" data-close>Закрыть</button></div>`);
     const origin = $('#room-origin'), code = $('#room-code'), status = $('#room-status');
     const team = $('#room-team');
-    team.value = Save.data.teamName || '';
+    team.value = yard?.team || Save.data.teamName || '';
     team.onchange = () => {
       team.value = Save.data.teamName = RoomField.teamName(team.value);
       Save.save();
     };
-    origin.value = invite.server || Save.data.roomOrigin || '';
+    origin.value = yard?.origin || invite.server || Save.data.roomOrigin || '';
     code.value = invite.code || Save.data.roomCode || '';
     const buttons = $$('#modal-box #join-room, #modal-box [data-create-room]');
     async function enter(mode, joining) {
@@ -480,15 +506,19 @@
         const server = OnlineRooms.origin(origin.value);
         const name = RoomField.teamName(team.value);
         const cup = mode === 'cup';
-        const session = await OnlineRooms.enter(server,cup ? 'am300' : mode,roomCode,{team:name,cup});
-        const obsoleteServer = cup && !session.room.cup;
+        const tournament = mode?.endsWith('-tournament') || false;
+        const game = mode?.startsWith('square') ? 'square' : 'am300';
+        const size = game === 'square' ? (mode === 'square-2' ? 2 : 4) : undefined;
+        const session = await OnlineRooms.enter(server,game,roomCode,{team:name,cup,size,tournament,yard});
+        const obsoleteServer = (cup && !session.room.cup) || (tournament && !session.room.tournament) ||
+          (size && size !== session.room.capacity) || (yard && yard.code !== session.room.yard?.code);
         if (obsoleteServer || !status.isConnected || $('#modal-wrap').classList.contains('hidden')) {
           OnlineRooms.request(server,'/'+session.room.code+'/leave',{body:{},token:session.token}).catch(() => {});
-          if (obsoleteServer) throw new Error('Сервер комнат нужно обновить для игры в кубке.');
+          if (obsoleteServer) throw new Error('Сервер комнат нужно обновить для этого формата.');
           return;
         }
         Save.data.roomOrigin = origin.value.trim();
-        Save.data.teamName = name;
+        if (!yard) Save.data.teamName = name;
         Save.data.roomCode = session.room.code; Save.save();
         closeModal(); startMode(session.room.mode,false,{online:session});
       } catch (e) { status.textContent = e.message; }
@@ -496,6 +526,83 @@
     }
     $('#join-room').onclick = () => enter(null,true);
     $$('#modal-box [data-create-room]').forEach(b => b.onclick = () => enter(b.dataset.createRoom,false));
+    $('#btn-online-yard').onclick = () => {
+      const saved = Save.data.onlineYard;
+      if (!yard && saved) onlineYardMenu({code:saved.code,server:saved.origin});
+      else onlineYardMenu({server:origin.value});
+    };
+    if (yard) {
+      $('#modal-title').dataset.noTranslate = '';
+      $('#modal-title').textContent = yard.name;
+      $('#yard-team').dataset.noTranslate = '';
+      $('#yard-team').textContent = `${I18n.text('Команда')}: ${yard.team}`;
+      $('#yard-invite').onclick = () => copyDialog('Приглашение во двор','По этой ссылке друзья смогут вступить во двор.',
+        OnlineRooms.inviteLink(yard.origin,null,yard.code),() => onlineLobby(invite));
+      $('#yard-rating').onclick = () => yardRating(yard,() => onlineLobby(invite));
+      $('#yard-refresh').onclick = () => onlineYardMenu({code:yard.code,server:yard.origin});
+      for (const room of yard.rooms || []) {
+        const button = document.createElement('button');
+        button.className = 'btn btn-paper';
+        button.textContent = `${OnlineRooms.format(room)} · ${room.host} · ${room.joined}/${room.capacity}`;
+        button.onclick = () => { code.value = room.code; enter(null,true); };
+        $('#yard-rooms').append(button);
+      }
+    }
+  }
+
+  function onlineYardMenu({code,server,preset,room} = {}) {
+    modal(`<h3>${code ? 'Вступить во двор' : 'Создать онлайн-двор'}</h3>
+      <div class="room-fields">
+        ${code ? '' : '<label>Название двора<input id="online-yard-name" maxlength="24" placeholder="Например, Наш двор"></label>'}
+        <label>Название команды<input id="online-yard-team" maxlength="24" placeholder="Например, Соседи"></label>
+        <label>Адрес сервера комнат<input id="online-yard-origin" type="url" placeholder="https://…"></label>
+      </div>
+      <p class="feature-status" id="online-yard-status" role="status"></p>
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button>
+        <button class="btn btn-primary" id="enter-yard">${code ? 'Войти во двор' : 'Создать двор'}</button></div>`);
+    const origin = $('#online-yard-origin');
+    origin.value = server || Save.data.roomOrigin || '';
+    $('#online-yard-team').value = Save.data.teamName || '';
+    const status = $('#online-yard-status'), button = $('#enter-yard');
+    async function enter() {
+      button.disabled = true;
+      try {
+        const address = OnlineRooms.origin(origin.value);
+        const yard = await OnlineYards.enter(address,{code,name:$('#online-yard-name')?.value,
+          team:$('#online-yard-team').value,preset:preset || Save.data.customYard || {base:Save.data.selectedYard,season:Save.data.yardSeason}});
+        if (status.isConnected && !$('#modal-wrap').classList.contains('hidden')) onlineLobby({yard,code:room});
+      } catch (e) { status.textContent = e.message; }
+      finally { button.disabled = false; }
+    }
+    button.onclick = enter;
+    if (code) {
+      try {
+        if (OnlineYards.token(OnlineRooms.origin(origin.value),code)) enter();
+      } catch { /* the server address can be filled in manually */ }
+    }
+  }
+
+  function yardRating(yard,onBack) {
+    modal('<h3>Рейтинг двора</h3><p>Победа — 3 очка, ничья — 1.</p><div id="yard-ratings"></div><button class="btn btn-paper" data-close>Во двор</button>',onBack,onBack);
+    const list = $('#yard-ratings');
+    const modes = {'square-2':'Квадрат 1×1','square-4':'Квадрат на четверых',am300:'Американка 1×1',
+      cup:'Кубок американки','square-tournament':'Турнир квадрата','am300-tournament':'Турнир американки'};
+    const entries = Object.entries(yard.standings || {});
+    if (!entries.length) list.textContent = 'Здесь появятся результаты после первого матча во дворе.';
+    for (const [mode,rows] of entries) {
+      const title = document.createElement('h4');
+      title.textContent = modes[mode];
+      const ranking = document.createElement('ol');
+      for (const row of rows) {
+        const li = document.createElement('li');
+        const name = document.createElement('span');
+        name.dataset.noTranslate = '';
+        name.textContent = row.name;
+        li.append(name,` · ${row.points} очк. · игр: ${row.played}`);
+        ranking.append(li);
+      }
+      list.append(title,ranking);
+    }
   }
 
   function playReplay() {
@@ -625,7 +732,8 @@
       <p class="feature-status" role="status" id="yard-editor-status"></p>
       <div class="modal-actions"><button class="btn btn-paper" data-close>Закрыть</button><button class="btn btn-primary" id="save-yard">Сохранить</button></div>
       <div class="feature-stack"><button class="btn btn-paper" id="open-packs">Наборы оформления</button>
-      <button class="btn btn-green" id="share-yard">Вызов в моём дворе</button></div>`);
+      <button class="btn btn-green" id="share-yard">Вызов в моём дворе</button>
+      <button class="btn btn-paper" id="create-online-yard">Создать этот двор онлайн</button></div>`);
     const canvas = $('#yard-editor-preview'), ctx = canvas.getContext('2d');
     const country = $('#edit-country'), base = $('#edit-base'), season = $('#edit-season');
     country.value = YARDS[draft.base].country;
@@ -655,6 +763,7 @@
         lockedPack ? 'Выбранные детали доступны в наборах оформления.' : '';
       $('#save-yard').disabled = lockedBase || lockedPack;
       $('#share-yard').disabled = lockedBase || lockedPack;
+      $('#create-online-yard').disabled = lockedBase || lockedPack;
     }
     Object.keys(editorLabels).forEach(key => {
       const field = $('#edit-'+key); field.value = draft[key];
@@ -676,6 +785,7 @@
     $('#open-packs').onclick = () => editorPacks(draft);
     $('#share-yard').onclick = () => shareActivity({...Activities.definition('targets'),yard:draft.base,custom:YardEditor.clean(draft)},
       undefined,() => yardEditor(draft));
+    $('#create-online-yard').onclick = () => onlineYardMenu({preset:YardEditor.clean(draft)});
     updateBases();
     refreshYardPreview = preview;
     preview();
@@ -1076,7 +1186,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 21</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 22</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -1136,7 +1246,8 @@
   $('#btn-pause').onclick = pauseModal;
   $('#btn-rematch').onclick = () => {
     Sound.ui();
-    if (matchOptions.online) onlineLobby();
+    if (matchOptions.online?.yard) onlineYardMenu({code:matchOptions.online.yard.code,server:matchOptions.online.origin});
+    else if (matchOptions.online) onlineLobby();
     else if (!matchIsCup) startMode(lastModeId,false,matchOptions.tutorial ? {} : matchOptions);
     else if (Cups.current().status === 'ready') startMode(Cups.current().mode,true);
     else openCup(Cups.current().mode);
@@ -1251,13 +1362,21 @@
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && current === 'match' && !paused) pauseModal();
+    if (document.hidden && current === 'match' && !paused && !matchOptions.online) pauseModal();
   });
   Yards.syncBallToYard();
   syncTabs();
+  const languagePicker = $('#language-picker');
+  for (const [id,name] of Object.entries(I18n.languages)) languagePicker.add(new Option(name,id));
+  languagePicker.value = I18n.language;
+  languagePicker.onchange = () => I18n.set(languagePicker.value);
+  I18n.start();
   nav('home');
   const params = new URLSearchParams(location.search);
   const invitation = Activities.fromLink(params);
   if (invitation) activityModal(invitation);
+  else if (/^[a-f0-9]{24}$/.test(params.get('court') || '')) onlineYardMenu({
+    code:params.get('court'),server:params.get('server') || '',room:params.get('room') || ''
+  });
   else if (/^[A-F0-9]{6}$/.test(params.get('room') || '')) onlineLobby({code:params.get('room'),server:params.get('server') || ''});
 })();

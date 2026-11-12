@@ -123,15 +123,16 @@ const YardEditor = {
     evening: { title: 'Вечер после дождя', price: 199, items: { surface: 'wet', frame: 'retro', light: 'warm', prop: 'lamp' } },
     floodlights: { title: 'Под прожекторами', price: 199, items: { surface: 'turf', frame: 'blue', light: 'dusk', prop: 'flags' } }
   },
-  clean(data = {}) {
-    const result = { base: this.bases.includes(data.base) ? data.base : 'ru90_1' };
+  clean(data = {}, knownYards = YARDS) {
+    const base = Object.hasOwn(knownYards,data.base) && knownYards[data.base];
+    const result = { base: base && (base.atlas || base.photo) ? base.id : 'ru90_1' };
     for (const [key, options] of Object.entries(this.fields)) {
       result[key] = Object.hasOwn(options, data[key]) ? data[key] : Object.keys(options)[0];
     }
     const requested = Array.isArray(data.props) ? data.props : [result.prop];
     result.props = Object.keys(this.decorations).filter(id => requested.includes(id));
     result.prop = result.props.find(id => Object.hasOwn(this.fields.prop, id)) || 'none';
-    result.season = YARDS[result.base].country === 'Россия' && data.season === 'winter' ? 'winter' : 'summer';
+    result.season = knownYards[result.base].country === 'Россия' && data.season === 'winter' ? 'winter' : 'summer';
     return result;
   },
   available(field, value) {
@@ -140,3 +141,4 @@ const YardEditor = {
     return !pack || Save.data.editorPacks.includes(pack[0]);
   }
 };
+if (typeof module !== 'undefined') module.exports = { YardEditor };

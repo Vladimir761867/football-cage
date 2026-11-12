@@ -141,27 +141,28 @@ Object.assign(BALLS.neon20, { decade: '20', price: 0 });
 
 /* Живые фоновые ассеты. Если браузер ещё не успел их загрузить,
    остаётся процедурный fallback ниже — игра не ждёт сеть. */
+const ArtImage = typeof Image === 'undefined' ? class { addEventListener() {} } : Image;
 const ART = {
-  classicMenu: new Image(),
-  classicSquare: new Image(),
-  classicGoal: new Image(),
-  russia90Menu: new Image(),
-  russia90Square: new Image(),
-  russia90Goal: new Image(),
-  players: new Image(),
-  runner: new Image(),
-  runnerRed: new Image(),
-  runnerGreen: new Image(),
-  keeperReady: new Image(),
-  keeperDive: new Image(),
-  runAtlas: { blue: new Image(), red: new Image(), green: new Image() },
-  kickBlue: new Image(),
-  kickRed: new Image(),
-  kickGreen: new Image(),
-  goalBlue: new Image(),
-  keeperAnim: new Image(),
-  russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new Image()])),
-  ballAtlas: new Image()
+  classicMenu: new ArtImage(),
+  classicSquare: new ArtImage(),
+  classicGoal: new ArtImage(),
+  russia90Menu: new ArtImage(),
+  russia90Square: new ArtImage(),
+  russia90Goal: new ArtImage(),
+  players: new ArtImage(),
+  runner: new ArtImage(),
+  runnerRed: new ArtImage(),
+  runnerGreen: new ArtImage(),
+  keeperReady: new ArtImage(),
+  keeperDive: new ArtImage(),
+  runAtlas: { blue: new ArtImage(), red: new ArtImage(), green: new ArtImage() },
+  kickBlue: new ArtImage(),
+  kickRed: new ArtImage(),
+  kickGreen: new ArtImage(),
+  goalBlue: new ArtImage(),
+  keeperAnim: new ArtImage(),
+  russian: Object.fromEntries(['80', '90', '00', '10', '20'].map(code => [code, new ArtImage()])),
+  ballAtlas: new ArtImage()
 };
 const ART_VERSION = '?v=20261111-12';
 ART.classicMenu.src = 'assets/yard-classic-menu.png' + ART_VERSION;
@@ -186,7 +187,7 @@ ART.goalBlue.src = 'assets/goal-blue.webp' + ART_VERSION;
 ART.keeperAnim.src = 'assets/keeper-anim.webp' + ART_VERSION;
 Object.entries(ART.russian).forEach(([code, img]) => { img.src = `assets/russia-${code}-triptych.webp` + ART_VERSION; });
 ART.ballAtlas.src = 'assets/balls-era-atlas.png' + ART_VERSION;
-Object.values(ART).flatMap(value => value instanceof Image ? [value] : Object.values(value))
+Object.values(ART).flatMap(value => value instanceof ArtImage ? [value] : Object.values(value))
   .forEach(img => img.addEventListener('load', () => window.dispatchEvent(new Event('art-ready'))));
 
 const Yards = (() => {
@@ -273,8 +274,7 @@ const Yards = (() => {
     const y = Math.min(0, Math.max(h - dh, h * .60 - (g[1] + g[3]) * dh));
     return { x, y: h / dh < .75 ? y : (h - dh) / 2, w: dw, h: dh };
   }
-  function goalGeometry(w, h, fallback) {
-    const t = theme();
+  function goalGeometry(w, h, fallback, t = theme()) {
     if (!t.atlas && !t.photo) return fallback;
     const p = atlasPlacement(w, h, t), g = t.photo?.goal || COURT_GOALS[t.atlas][t.variant];
     return { x: p.x + g[0] * p.w, y: p.y + (g[1] + g[3]) * p.h, w: g[2] * p.w, h: g[3] * p.h };
@@ -352,7 +352,9 @@ const Yards = (() => {
       for (let k = 0; k <= 48; k++) { const a = k / 48 * Math.PI * 2; ring.push(P(.5 + Math.cos(a) * .36, .5 + Math.sin(a) * .36)); }
       lines.push(ring);
     }
-    if (opts.cross !== false) {
+    if (opts.halves) {
+      lines.push([P(.5, 0), P(.5, 1)]);
+    } else if (opts.cross !== false) {
       lines.push([P(.5, 0), P(.5, 1)], [P(0, .5), P(1, .5)]);
       const c = [];
       for (let k = 0; k <= 40; k++) { const a = k / 40 * Math.PI * 2; c.push(P(.5 + Math.cos(a) * .11, .5 + Math.sin(a) * .11)); }
@@ -551,6 +553,7 @@ const Yards = (() => {
   }
 
   function drawFieldText(ctx, text, x, y) {
+    if (typeof I18n !== 'undefined') text = I18n.text(text);
     if (theme().season === 'winter') {
       ctx.save();
       ctx.strokeStyle = 'rgba(17,29,44,.86)';
@@ -1142,3 +1145,4 @@ const Yards = (() => {
 
   return { theme, editedTheme, seasonal, setScene, withScene, ball, ballEra, ballsForEra, ownsBall, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, drawYardReaction, drawFieldText, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
 })();
+if (typeof module !== 'undefined') module.exports = { YARDS, Yards };

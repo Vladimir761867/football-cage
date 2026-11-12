@@ -99,6 +99,13 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--night)
 .editor-fields label[hidden]{display:none;}
 .editor-fields select,.room-fields input,.share-link{width:100%;min-width:0;min-height:40px;padding:6px 8px;border:1px solid #b5aa97;border-radius:8px;background:#fff9eb;color:#29251d;font:inherit;}
 .room-fields{display:grid;gap:8px;margin:10px 0;}
+.room-fields label[hidden]{display:none;}
+.room-tournaments summary{min-height:44px;padding:12px 8px;font-weight:700;cursor:pointer;}
+#language-picker{min-height:44px;max-width:42%;font:600 13px Rubik,system-ui;
+  color:var(--ink);background:var(--paper);border:0;border-radius:10px;padding:6px 8px;}
+html:not([lang="ru"]) .logo{font-size:clamp(37px,11vw,64px);line-height:1.06;}
+html[lang="zh-Hans"] .logo,html[lang="hi"] .logo{font-family:system-ui,sans-serif;}
+html:not([lang="ru"]) .home-row .btn{white-space:normal;}
 .feature-status{font-size:12px;min-height:1.2em;line-height:1.35;}
 .modal .feature-small{font-size:12px;opacity:.85;}
 .home-row{display:flex;gap:12px;}
