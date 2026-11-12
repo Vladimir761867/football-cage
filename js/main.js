@@ -17,7 +17,10 @@
   let matchOptions = {};
   let replay = null, lastActivity = null;
   let matchElapsed = 0;
+  let lastGoal = null;
   let refreshYardPreview = null;
+  let refreshAlbum = null;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   /* ---------- навигация ---------- */
   function nav(name) {
@@ -102,6 +105,7 @@
     if (inCup && !cup) return;
     matchOptions = options;
     replay = null; lastActivity = null;
+    lastGoal = null;
     const cupTrial = cup?.mode === 'am300' && cup.stage < 2;
     const challenge = cupTrial ? { ...Activities.definition(cup.stage === 0 ? 'bar' : 'targets'),
       title: cup.stage === 0 ? 'Попадание в раму' : 'Девятка',
@@ -109,6 +113,7 @@
       description: cup.stage === 0 ? 'За пять ударов попади в штангу или перекладину.' : 'За пять ударов попади в девятку.' }
       : options.challenge;
     const progress = challenge && Activities.tracker(challenge);
+    const collection = options.tutorial || options.online ? null : Collections.match();
     const matchDifficulty = cup ? Cups.difficulty(cup) : options.tutorial ? 'beginner' : challenge?.difficulty || difficulty;
     Yards.syncBallToYard();
     if (options.online) Yards.setScene(YARDS.ru90_1);
@@ -157,6 +162,11 @@
         progress.push(event);
         hud.setPill('objective', `${progress.score}/${challenge.goal}`);
       },
+      collect(event) { collection?.note(event); },
+      goal(point) {
+        collection?.note('goal');
+        lastGoal = { ...point, time: matchElapsed, effect: Collections.effect() };
+      },
       learned() {
         Save.data.tutorialSeen[id] = true;
         Save.data.playStats.lesson++;
@@ -164,7 +174,9 @@
         showResult({title:'Получилось!', score:'Первый розыгрыш', sub:'Теперь попробуй в матче.', coins:0, lesson:true});
       },
       highlight(clip) {
-        if (!replay || (clip.value || 0) >= (replay.value || 0)) replay = { ...clip, W, H, yard: Yards.theme() };
+        if (!replay || (clip.value || 0) >= (replay.value || 0)) {
+          replay = { ...clip, W, H, yard: Yards.theme(), effect: clip.scored ? Collections.effect() : null };
+        }
       },
       bgFor(key, painter) {
         if (!bgCache[key] || bgCache[key].revision !== artRevision) {
@@ -194,7 +206,10 @@
           }
         }
         if (cup) result.cupResult = Cups.settle(result);
-        if (!result.aborted) trackMatch();
+        if (!result.aborted) {
+          result.collection = collection?.finish(Yards.theme(), result.cupResult?.status === 'won', Activities.day());
+          trackMatch();
+        }
         stopLoop();
         showResult(result);
       }
@@ -226,7 +241,8 @@
     if (!activeMode) return; // finish мог сработать внутри update
     activeMode.draw(activeMode.env.ctx);
     const { ctx, W, H } = activeMode.env;
-    Yards.drawYardReaction(ctx, W, H, matchElapsed);
+    if (lastGoal) Collections.drawEffect(ctx,lastGoal.effect,lastGoal.x,lastGoal.y,matchElapsed-lastGoal.time,reducedMotion.matches);
+    Yards.drawYardReaction(ctx, W, H, matchElapsed, lastGoal?.time);
   }
   function stopLoop() {
     cancelAnimationFrame(rafId);
@@ -271,6 +287,10 @@
     $('#result-moment').textContent = res.moment || '';
     $('#result-reward').innerHTML =
       `🪙 +${res.coins} жетонов${res.newBest ? ' &nbsp;•&nbsp; 🏆 Новый рекорд!' : ''}`;
+    const rewards = (res.collection?.badges || []).map(id => 'Нашивка «' + Collections.badges[id].name + '»');
+    if (res.collection?.photo) rewards.push('Снимок двора добавлен');
+    $('#result-collection').textContent = rewards.join(' · ');
+    $('#btn-result-album').classList.toggle('hidden', rewards.length === 0);
     $('#btn-rematch').textContent = '🔁 Ещё раз';
     if (res.lesson) $('#btn-rematch').textContent = 'Начать матч';
     if (matchOptions.online) $('#btn-rematch').textContent = 'Новая комната';
@@ -419,19 +439,93 @@
       const x = rebound ? U.lerp(clip.to.x, clip.rebound.x, rebound) : U.lerp(clip.from.x, clip.to.x, k);
       const y = rebound ? U.lerp(clip.to.y, clip.rebound.y, rebound) - Math.sin(rebound * Math.PI) * 12 :
         U.lerp(clip.from.y, clip.to.y, k) - Math.sin(k * Math.PI) * clip.arc;
-      const playing = t < 1 || Boolean(clip.rebound && rebound < 1);
+      const flying = t < 1 || Boolean(clip.rebound && rebound < 1);
+      const playing = flying || Boolean(clip.effect && elapsed < 1650);
       Yards.withScene(clip.yard, () => {
         Yards.paintGoalScene(ctx,clip.W,clip.H,clip.goal);
         if (!Yards.artGoal(clip.W,clip.H)) Yards.drawGoalFrame(ctx,clip.goal);
-        Yards.drawBall(ctx,x,y,U.lerp(15,8,k),undefined,playing);
+        Yards.drawBall(ctx,x,y,U.lerp(15,8,k),undefined,flying);
+        if (clip.effect && t === 1) Collections.drawEffect(ctx,clip.effect,x,y,(elapsed-800)/1000,reducedMotion.matches);
       });
       if (playing) requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
   }
 
+  function albumYard(photo) {
+    return photo.custom ? Yards.editedTheme(photo.custom) : Yards.seasonal(YARDS[photo.base],photo.season);
+  }
+  function paintAlbumPhoto(canvas, photo) {
+    const ctx = canvas.getContext('2d');
+    Yards.withScene(albumYard(photo), () => Yards.paintMenu(ctx,canvas.width,canvas.height));
+  }
+  function openAlbum(tab = 'badges') {
+    const photos = Object.values(Save.data.collection.photos)
+      .filter(photo => photo && Object.hasOwn(YARDS,photo.base)).reverse();
+    const earned = Save.data.collection.badges;
+    modal(`<h3>Альбом дворов</h3>
+      <div class="yard-country-filter">
+        <button class="yard-era-btn ${tab === 'badges' ? 'active' : ''}" id="album-badges" aria-pressed="${tab === 'badges'}">Нашивки</button>
+        <button class="yard-era-btn ${tab === 'photos' ? 'active' : ''}" id="album-photos" aria-pressed="${tab === 'photos'}">Фотографии</button>
+      </div>
+      <div id="album-content"></div>
+      <div class="feature-stack"><button class="btn btn-primary" data-close>Готово</button></div>`);
+    $('#album-badges').onclick = () => openAlbum('badges');
+    $('#album-photos').onclick = () => openAlbum('photos');
+    const content = $('#album-content');
+    if (tab === 'badges') {
+      content.innerHTML = `<p class="feature-small">Нашивки за мастерство · ${Object.keys(Collections.badges).filter(id => earned.includes(id)).length}/6</p>` +
+        Object.entries(Collections.badges).map(([id,badge]) => `<div class="collection-row">
+          <span class="collection-icon" aria-hidden="true">${badge.icon}</span>
+          <div><strong>${badge.name}</strong>
+          <p>${badge.detail}</p>
+          <span class="collection-mark">${earned.includes(id) ? '✓ Получена' : 'Задание'}</span></div></div>`).join('') +
+        `<p class="feature-small">Нашивки вызова дня · ${Number(Save.data.badges) || 0}</p>`;
+      return;
+    }
+    if (!photos.length) content.innerHTML = '<p>Заверши матч с выполненным заданием на нашивку, чтобы добавить снимок двора.</p>';
+    const list = document.createElement('div');
+    list.className = 'feature-stack';
+    content.appendChild(list);
+    const previews = [];
+    if (Save.openCatalog) {
+      const scene = Yards.theme();
+      photos.unshift({base:scene.custom?.base || scene.id,season:scene.season,custom:scene.custom,sample:true});
+    }
+    photos.forEach(photo => {
+      const card = document.createElement('button');
+      card.className = 'collection-photo';
+      const name = albumYard(photo).name + (photo.season === 'winter' ? ' · Зима' : '');
+      const canvas = document.createElement('canvas');
+      canvas.width = 400; canvas.height = 200;
+      const caption = document.createElement('span');
+      caption.textContent = photo.sample ? 'Пример снимка · ' + name : name;
+      card.append(canvas,caption);
+      card.onclick = () => showAlbumPhoto(photo,name);
+      list.appendChild(card);
+      previews.push([canvas,photo]);
+    });
+    refreshAlbum = () => {
+      if (list.isConnected && !$('#modal-wrap').classList.contains('hidden')) {
+        previews.forEach(([canvas,photo]) => paintAlbumPhoto(canvas,photo));
+      }
+    };
+    refreshAlbum();
+  }
+  function showAlbumPhoto(photo,name) {
+    modal(`<h3>${name}</h3><canvas class="collection-large-photo" width="540" height="432"></canvas>
+      <p class="feature-small">${photo.sample ? 'Пример снимка' : Collections.badges[photo.reason]?.name || 'Снимок из матча'}</p>
+      <div class="feature-stack"><button class="btn btn-paper" id="back-to-album">В альбом</button></div>`);
+    const canvas = $('.collection-large-photo');
+    refreshAlbum = () => {
+      if (canvas.isConnected && !$('#modal-wrap').classList.contains('hidden')) paintAlbumPhoto(canvas,photo);
+    };
+    $('#back-to-album').onclick = () => openAlbum('photos');
+    refreshAlbum();
+  }
+
   const editorLabels = {surface:'Покрытие',frame:'Ворота',light:'Свет'};
-  const ownsYard = yard => yard.free || Save.data.ownedYards.includes(yard.id);
+  const ownsYard = yard => Save.openCatalog || yard.free || Save.data.ownedYards.includes(yard.id);
   function yardEditor(previous = Save.data.customYard || {base:Save.data.selectedYard}) {
     const draft = YardEditor.clean({ ...previous, season: previous.season ?? Save.data.yardSeason });
     modal(`<h3>Мой двор</h3><canvas class="yard-editor-preview" id="yard-editor-preview" width="620" height="360"></canvas>
@@ -507,13 +601,13 @@
 
   function editorPacks(draft) {
     modal(`<h3>Наборы оформления</h3><p class="feature-small">Демо-витрина. При разблокировке деньги не списываются.</p>
-      <div class="feature-stack">${Object.entries(YardEditor.packs).map(([id,pack]) => `<button class="btn btn-paper" data-editor-pack="${id}">${pack.title} · ${Save.data.editorPacks.includes(id) ? 'примерить' : pack.price+' ₽ в витрине'}</button>`).join('')}</div>
+      <div class="feature-stack">${Object.entries(YardEditor.packs).map(([id,pack]) => `<button class="btn btn-paper" data-editor-pack="${id}">${pack.title} · ${Save.openCatalog || Save.data.editorPacks.includes(id) ? 'примерить' : pack.price+' ₽ в витрине'}</button>`).join('')}</div>
       <button class="btn btn-primary" id="back-to-editor">В редактор</button>`);
     $('#back-to-editor').onclick = () => yardEditor(draft);
     $$('#modal-box [data-editor-pack]').forEach(b => b.onclick = () => {
       const id = b.dataset.editorPack, pack = YardEditor.packs[id];
       const preset = { ...draft, ...pack.items, props: [...draft.props, pack.items.prop] };
-      if (Save.data.editorPacks.includes(id)) { yardEditor(preset); return; }
+      if (Save.openCatalog || Save.data.editorPacks.includes(id)) { yardEditor(preset); return; }
       modal(`<h3>${pack.title}</h3><p>${Object.entries(pack.items).map(([k,v]) => YardEditor.fields[k][v]).join(' · ')}</p>
         <div class="modal-actions"><button class="btn btn-paper" id="try-pack">Примерить</button><button class="btn btn-primary" id="unlock-pack">Открыть в демо</button></div>`);
       $('#try-pack').onclick = () => yardEditor(preset);
@@ -526,6 +620,7 @@
 
   /* ---------- магазин ---------- */
   let shopTab = 'yards';
+  let outfitTab = 'kits';
   let yardEra = 'all';
   let yardCountry = Yards.theme().country || 'Россия';
   let outfitEra = Yards.ballEra();
@@ -538,12 +633,20 @@
     const bg = ctx.createLinearGradient(0,0,w,h);
     bg.addColorStop(0,'#243341'); bg.addColorStop(1,'#141d27');
     ctx.fillStyle=bg; ctx.fillRect(0,0,w,h);
+    const shoes = canvas.dataset.shoes ? canvas.dataset.shoes === 'special' : Collections.hasShoesEquipped(outfit.era);
+    if (canvas.dataset.footwear) {
+      if (!Wardrobe.drawFootwear(ctx,w,h,outfit.id,shoes)) {
+        ctx.fillStyle='#f0e6d2'; ctx.textAlign='center'; ctx.font='14px system-ui';
+        ctx.fillText('Загружаем обувь…',w/2,h/2);
+      }
+      return;
+    }
     ctx.strokeStyle='rgba(248,223,172,.2)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.ellipse(w/2,h-22,w*.3,10,0,0,Math.PI*2); ctx.stroke();
     const phase=performance.now()/160;
     const state=animate ? Math.floor(performance.now()/2200)%3 : 0;
     const drawn=Wardrobe.draw(ctx,w/2,h-24,(h-55)/150,outfit.id,state===2 ? 'keeper' : 'field',
-      {moving:animate && state===0,kick:state===1,phase});
+      {moving:animate && state===0,kick:state===1,phase,shoes});
     if (!drawn) {
       ctx.fillStyle='#f0e6d2'; ctx.textAlign='center'; ctx.font='14px system-ui';
       ctx.fillText(Wardrobe.load(outfit.era).failed ? 'Не удалось загрузить одежду' : 'Загружаем одежду…',w/2,h/2);
@@ -573,7 +676,7 @@
   }
   function renderOutfits(list) {
     const note=document.createElement('p'); note.className='ball-set-note outfit-note';
-    note.textContent='Дворовая одежда бесплатна. Форма за жетоны. Выбор сохраняется для каждого десятилетия.';
+    note.textContent='Комплект и обувь сохраняются отдельно для каждого десятилетия.';
     list.appendChild(note);
     const play=document.createElement('button'); play.className='btn btn-green';
     play.textContent='Играть во дворе · '+Wardrobe.eras[outfitEra];
@@ -582,7 +685,8 @@
       Yards.syncBallToYard(); nav('modes');
     };
     list.appendChild(play);
-    Wardrobe.list(outfitEra).forEach(item => {
+    if (outfitTab === 'shoes') renderShoes(list);
+    else Wardrobe.list(outfitEra).forEach(item => {
       const selected=Wardrobe.selected(outfitEra).id===item.id;
       const card=document.createElement('div'); card.className='shop-card outfit-card';
       card.innerHTML=`<canvas class="outfit-preview" data-outfit="${item.id}" width="300" height="220"></canvas>
@@ -599,10 +703,96 @@
     });
   }
 
+  function renderShoes(list) {
+    const era = outfitEra, outfit = Wardrobe.selected(era);
+    const equipped = Collections.hasShoesEquipped(era);
+    for (const special of [false,true]) {
+      const item = special ? Collections.shoes[era] :
+        {name:'Обувь из комплекта',detail:'Подбирается вместе с выбранной одеждой.'};
+      const card = document.createElement('div');
+      card.className = 'shop-card outfit-card';
+      card.innerHTML = `<canvas class="outfit-preview footwear-preview" data-outfit="${outfit.id}"
+        data-shoes="${special ? 'special' : 'base'}" data-footwear="true" width="300" height="128"></canvas>
+        <div class="shop-card-body"><div class="shop-card-title">${item.name}</div>
+          <div class="outfit-category">${Wardrobe.eras[era]} ${equipped === special ? '· ✓ Надета' : ''}</div>
+          <div class="shop-card-desc">${item.detail}</div>
+          <div class="shop-card-actions"><button class="btn btn-paper">Примерить</button></div>
+        </div>`;
+      card.querySelector('button').onclick = () => shoeModal(era,special,item);
+      list.appendChild(card);
+      paintOutfit(card.querySelector('canvas'));
+    }
+  }
+  function shoeModal(era,special,item) {
+    const owned = !special || Collections.ownsShoes(era);
+    modal(`<h3>${item.name}</h3><canvas class="outfit-fitting" data-outfit="${Wardrobe.selected(era).id}"
+      data-shoes="${special ? 'special' : 'base'}" width="300" height="230"></canvas>
+      <p>${item.detail}</p><p class="feature-status" role="status" id="shoe-status"></p>
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button>
+      <button class="btn btn-primary" id="equip-shoes">${owned ? 'Надеть' : 'Купить · 🪙 ' + item.price}</button></div>`);
+    const canvas = $('#modal-box .outfit-fitting');
+    function frame() {
+      if (!canvas.isConnected || $('#modal-wrap').classList.contains('hidden')) return;
+      paintOutfit(canvas,true);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    $('#equip-shoes').onclick = () => {
+      if (!Collections.equipShoes(era,special)) {
+        $('#shoe-status').textContent = 'Не хватает жетонов.';
+        return;
+      }
+      closeModal(); updateCoins(); renderShop();
+    };
+  }
+  function paintEffect(canvas,id,time) {
+    const ctx = canvas.getContext('2d'), w = canvas.width, h = canvas.height;
+    ctx.fillStyle = '#293746';
+    ctx.fillRect(0,0,w,h);
+    Yards.drawGoalFrame(ctx,{x:w*.22,y:h*.85,w:w*.56,h:h*.69});
+    Yards.drawBall(ctx,w/2,h*.52,10);
+    Collections.drawEffect(ctx,id,w/2,h*.52,time,reducedMotion.matches);
+  }
+  function renderEffects(list) {
+    Object.entries(Collections.effects).forEach(([id,item]) => {
+      const card = document.createElement('div');
+      card.className = 'shop-card';
+      card.innerHTML = `<canvas class="effect-preview" width="300" height="120"></canvas>
+        <div class="shop-card-body"><div class="shop-card-title">${item.name}</div>
+        <div class="shop-card-desc">${item.detail}${Collections.effect() === id ? ' · ✓ Выбран' : ''}</div>
+        <div class="shop-card-actions"><button class="btn btn-paper">Посмотреть эффект</button></div></div>`;
+      card.querySelector('button').onclick = () => effectModal(id,item);
+      list.appendChild(card);
+      paintEffect(card.querySelector('canvas'),id,.29);
+    });
+  }
+  function effectModal(id,item) {
+    const owned = Collections.ownsEffect(id);
+    modal(`<h3>${item.name}</h3><canvas class="outfit-fitting" width="300" height="150"></canvas>
+      <p>${item.detail}</p><p class="feature-status" role="status" id="effect-status"></p>
+      <div class="modal-actions"><button class="btn btn-paper" data-close>Назад</button>
+      <button class="btn btn-primary" id="equip-effect">${owned ? 'Выбрать' : item.badge ? 'Как получить' : 'Купить · 🪙 '+item.price}</button></div>`);
+    const canvas = $('#modal-box .outfit-fitting'), start = performance.now();
+    function frame(now) {
+      if (!canvas.isConnected || $('#modal-wrap').classList.contains('hidden')) return;
+      paintEffect(canvas,id,((now-start)%1600)/1000);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    $('#equip-effect').onclick = () => {
+      if (!Collections.equipEffect(id)) {
+        $('#effect-status').textContent = item.badge ? Collections.badges[item.badge].detail : 'Не хватает жетонов.';
+        return;
+      }
+      closeModal(); updateCoins(); renderShop();
+    };
+  }
+
   function renderShop() {
     const list = $('#shop-list');
     list.innerHTML = '';
     if (shopTab === 'outfits') { renderOutfits(list); return; }
+    if (shopTab === 'effects') { renderEffects(list); return; }
     if (shopTab === 'yards') {
       Object.values(YARDS).filter(y =>
         (y.country || 'Россия') === yardCountry &&
@@ -618,8 +808,9 @@
         card.innerHTML = `
           <canvas class="shop-card-preview"></canvas>
           <div class="shop-card-body">
-            <div class="shop-card-title">${view.name}
+          <div class="shop-card-title">${view.name}
               ${y.free ? '<span class="tag tag-free">Бесплатно</span>'
+                : Save.openCatalog ? '<span class="tag tag-free">Для теста</span>'
                 : owned ? '<span class="tag tag-owned">Куплено</span>'
                 : y.priceCoins ? '<span class="tag tag-paid">За жетоны</span>' : '<span class="tag tag-paid">Платный набор</span>'}
             </div>
@@ -653,10 +844,10 @@
       Yards.syncBallToYard();
       const note = document.createElement('p');
       note.className = 'ball-set-note';
-      note.textContent = `Мячи: ${Yards.ball().era} · 3 варианта. Эпоха меняется вместе с двором. Выбор для каждой эпохи сохраняется.`;
+      note.textContent = `Мячи: ${Yards.ball().era} · ${Yards.ballsForEra().length} варианта. Выбор сохраняется для каждой эпохи.`;
       list.appendChild(note);
       Yards.ballsForEra().forEach(bl => {
-        const owned = Save.data.ownedBalls.includes(bl.id);
+        const owned = Yards.ownsBall(bl.id);
         const selected = Save.data.selectedBall === bl.id;
         const row = document.createElement('div');
         row.className = 'shop-card ball-row';
@@ -755,7 +946,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 19</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 20</p>
       <button class="btn btn-green" id="btn-update-game" style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <div class="modal-actions"><button class="btn btn-primary" data-close>Готово</button></div>`);
@@ -791,6 +982,8 @@
   };
   $('#btn-wardrobe').onclick = () => { Sound.ui(); shopTab='outfits'; outfitEra=Yards.ballEra(); syncTabs(); nav('shop'); };
   $('#btn-yards').onclick = () => { Sound.ui(); yardEditor(); };
+  $('#btn-album').onclick = () => openAlbum();
+  $('#btn-result-album').onclick = () => openAlbum('photos');
   $('#btn-daily').onclick = () => activityModal(Activities.daily());
   $('#btn-online').onclick = () => onlineLobby();
   $('#btn-activities').onclick = activitiesMenu;
@@ -831,6 +1024,11 @@
     Sound.ui(); shopTab = b.dataset.tab; syncTabs(); renderShop();
   });
   $$('.outfit-era-btn').forEach(b => b.onclick = () => { outfitEra=b.dataset.outfitEra; renderShop(); });
+  $$('[data-outfit-section]').forEach(b => b.onclick = () => {
+    outfitTab = b.dataset.outfitSection;
+    syncTabs();
+    renderShop();
+  });
   $$('[data-country]').forEach(b => b.onclick = () => {
     yardCountry = b.dataset.country;
     yardEra = 'all';
@@ -873,6 +1071,13 @@
     });
     $('#yard-era-filter').classList.toggle('hidden', shopTab !== 'yards');
     $('#outfit-era-filter').classList.toggle('hidden', shopTab !== 'outfits');
+    $('#outfit-section-filter').classList.toggle('hidden', shopTab !== 'outfits');
+    $('#test-catalog').classList.toggle('hidden', !Save.openCatalog);
+    $$('[data-outfit-section]').forEach(b => {
+      const selected = b.dataset.outfitSection === outfitTab;
+      b.classList.toggle('active', selected);
+      b.setAttribute('aria-pressed', selected);
+    });
   }
 
   window.addEventListener('resize', () => {
@@ -884,6 +1089,7 @@
     artRevision++;
     if (current !== 'match') nav(current);
     refreshYardPreview?.();
+    refreshAlbum?.();
   });
   window.addEventListener('wardrobe-ready', () => {
     $$('#shop-list canvas[data-outfit]').forEach(c => paintOutfit(c));

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261112-19">
+<link rel="stylesheet" href="css/style.css?v=20261112-20">
 </head>
 <body>
 <div id="app">
@@ -35,6 +35,7 @@
           <button class="btn btn-paper" id="btn-wardrobe">👕 Одежда</button>
           <button class="btn btn-paper" id="btn-online">С друзьями</button>
         </div>
+        <button class="btn btn-paper" id="btn-album">📷 Альбом и нашивки</button>
       </div>
       <div class="fair-note">🧢 Косметика — только стиль. На игру не влияет.</div>
     </div>
@@ -131,11 +132,13 @@
         <div class="result-sub" id="result-sub"></div>
         <div class="result-best" id="result-moment"></div>
         <div class="result-reward" id="result-reward"></div>
+        <div class="result-collection" id="result-collection"></div>
       </div>
       <button class="btn btn-primary btn-big" id="btn-rematch">🔁 Ещё раз</button>
       <div class="result-actions">
         <button class="btn btn-green hidden" id="btn-share-result">Вызвать друга</button>
         <button class="btn btn-paper hidden" id="btn-replay">Повтор момента</button>
+        <button class="btn btn-paper hidden" id="btn-result-album">Альбом</button>
       </div>
       <button class="btn btn-paper btn-exit" id="btn-result-menu">В меню</button>
     </div>
@@ -154,6 +157,12 @@
         <button class="shop-tab active" data-tab="yards">🏠 Дворы</button>
         <button class="shop-tab" data-tab="balls">⚽ Мячи</button>
         <button class="shop-tab" data-tab="outfits">👕 Одежда</button>
+        <button class="shop-tab" data-tab="effects">✨ Голы</button>
+      </div>
+      <p class="test-catalog hidden" id="test-catalog">Тестовый доступ · весь каталог открыт</p>
+      <div class="yard-country-filter hidden" id="outfit-section-filter" aria-label="Вид одежды">
+        <button class="yard-era-btn active" data-outfit-section="kits" aria-pressed="true">Комплекты</button>
+        <button class="yard-era-btn" data-outfit-section="shoes" aria-pressed="false">Обувь</button>
       </div>
       <div class="yard-country-filter" id="yard-country-filter" aria-label="Страна двора">
         <button class="yard-era-btn active" data-country="Россия" aria-pressed="true">Россия</button>
@@ -190,19 +199,20 @@
 
 </div>
 <script src="js/sound.js?v=20261112-16"></script>
-<script src="js/save.js?v=20261112-19"></script>
-<script src="js/wardrobe.js?v=20261112-16"></script>
+<script src="js/save.js?v=20261112-20"></script>
+<script src="js/collections.js?v=20261112-20"></script>
+<script src="js/wardrobe.js?v=20261112-20"></script>
 <script src="js/competition.js?v=20261112-16"></script>
-<script src="js/activity.js?v=20261112-19"></script>
+<script src="js/activity.js?v=20261112-20"></script>
 <script src="js/shot-rules.js?v=20261112-16"></script>
 <script src="js/room-rules.js?v=20261112-16"></script>
-<script src="js/yards.js?v=20261112-19"></script>
+<script src="js/yards.js?v=20261112-20"></script>
 <script src="js/gesture.js?v=20261112-16"></script>
-<script src="js/mode_dog.js?v=20261112-19"></script>
-<script src="js/mode_square.js?v=20261112-19"></script>
-<script src="js/mode_am300.js?v=20261112-19"></script>
-<script src="js/mode_cross.js?v=20261112-19"></script>
+<script src="js/mode_dog.js?v=20261112-20"></script>
+<script src="js/mode_square.js?v=20261112-20"></script>
+<script src="js/mode_am300.js?v=20261112-20"></script>
+<script src="js/mode_cross.js?v=20261112-20"></script>
 <script src="js/online.js?v=20261112-16"></script>
-<script src="js/main.js?v=20261112-19"></script>
+<script src="js/main.js?v=20261112-20"></script>
 </body>
 </html>

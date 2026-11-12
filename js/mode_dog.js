@@ -130,6 +130,7 @@ class DogMode {
   _penalize(i, reason) {
     if (i < 0 || !this.active[i]) return;
     this.errors[i]++;
+    if (i === 0) this.env.collect?.('loss');
     this.env.progress?.('loss');
     this.streak = 0;
     this.env.hud.setPill('losses', `${this.errors[0]}/10`);
@@ -158,6 +159,7 @@ class DogMode {
   }
 
   _changeRole() {
+    this.env.collect?.('loss');
     this.youDog = true;
     this.dogs[0].manual = null;
     this.env.hud.hint('Ты водишь. Свайпни в сторону передачи, чтобы перехватить мяч.');
@@ -170,6 +172,7 @@ class DogMode {
     if (!f) return;
     if (f.outcome === 'ok') {
       this.passes++; this.streak++;
+      if (this.holder === 0 && !this.youDog) this.env.collect?.('pass');
       this.env.progress?.('pass');
       if (this.env.tutorial && this.holder === 0) { this.env.learned?.(); return; }
       const fast = this.fast && this.holder === 0;

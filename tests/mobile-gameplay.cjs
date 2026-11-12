@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 
-function runtime(storage = new Map()) {
+function runtime(storage = new Map(), openCatalog = false) {
   const context = vm.createContext({
     Image: class { addEventListener() {} }, window: { dispatchEvent() {} },
     URL, location: { href: 'https://example.test/football-cage/' },
@@ -13,10 +13,11 @@ function runtime(storage = new Map()) {
     Sound: new Proxy({}, { get: () => () => {} }),
     Math: Object.assign(Object.create(Math), { random: () => .5 })
   });
-  for (const file of ['save', 'wardrobe', 'competition', 'activity', 'shot-rules', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
+  for (const file of ['save', 'collections', 'wardrobe', 'competition', 'activity', 'shot-rules', 'yards', 'gesture', 'mode_dog', 'mode_square', 'mode_am300', 'mode_cross']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../js', file + '.js'), 'utf8'), context);
   }
-  return vm.runInContext('({Save,Wardrobe,Difficulty,Cups,Activities,YardEditor,ShotRules,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
+  vm.runInContext('Save.openCatalog = ' + openCatalog, context);
+  return vm.runInContext('({Save,Collections,Wardrobe,Difficulty,Cups,Activities,YardEditor,ShotRules,Yards,BALLS,YARDS,Gesture,DogMode,SquareMode,Am300Mode,CrossMode})', context);
 }
 function env() {
   return { W: 520, H: 1125, difficulty: 'normal', opponentCount: 3, gesture: {},
@@ -84,10 +85,10 @@ test('a wrong first dive and a swipe released after the deadline both concede', 
   assert.equal(harder.keeperIndex, 0);
 });
 
-test('each decade has exactly three balls and a free default; every yard selects its era', () => {
+test('each decade has four balls and a free default; every yard selects its era', () => {
   const { Yards, YARDS, Save } = runtime();
   for (const era of ['80', '90', '00', '10', '20']) {
-    assert.equal(Yards.ballsForEra(era).length, 3);
+    assert.equal(Yards.ballsForEra(era).length, 4);
     assert.equal(Yards.ballsForEra(era).filter(b => b.price === 0).length, 1);
   }
   for (const yard of Object.values(YARDS)) {
@@ -96,6 +97,51 @@ test('each decade has exactly three balls and a free default; every yard selects
     assert.equal(ball.decade, Yards.ballEra(yard));
     assert.ok(Save.data.ownedBalls.includes(ball.id));
   }
+});
+
+test('open catalog allows selection without spending or writing purchases', () => {
+  const storage = new Map();
+  const { Save, Collections, Wardrobe, Yards, YardEditor } = runtime(storage,true);
+  assert.equal(Collections.equipShoes('90',true),true);
+  assert.equal(Collections.hasShoesEquipped('90'),true);
+  assert.equal(Collections.equipEffect('lights'),true);
+  assert.equal(Wardrobe.buy('90-football'),true);
+  assert.equal(YardEditor.available('light','dusk'),true);
+  Save.data.selectedBall = 'rubber90';
+  assert.equal(Yards.syncBallToYard().id,'rubber90');
+  assert.equal(Save.data.coins,0);
+  assert.equal(Save.data.collection.shoes.length,0);
+  assert.equal(Save.data.collection.effects.length,0);
+  assert.equal(Save.data.ownedOutfits.length,0);
+  assert.equal(Save.data.ownedBalls.includes('rubber90'),false);
+  const closed = runtime(storage);
+  assert.equal(closed.Collections.hasShoesEquipped('90'),false);
+  assert.equal(closed.Collections.effect(),'net');
+  assert.equal(closed.Yards.syncBallToYard().id,'classic');
+});
+
+test('mastery earns one badge and one photo per yard season', () => {
+  const storage = new Map();
+  const { Save, Collections, Yards, YARDS } = runtime(storage,true);
+  const day = '2026-11-12';
+  const custom = {base:'ru90_1',season:'winter',props:['bench','coach']};
+  const winter = Yards.editedTheme(custom);
+  const warmup = Collections.match();
+  for (let i=0;i<4;i++) warmup.note('pass');
+  warmup.note('loss');
+  warmup.note('pass');
+  assert.equal(warmup.finish(winter,false,day).photo,false);
+  const match = Collections.match();
+  for (let i=0;i<5;i++) match.note('pass');
+  const earned = match.finish(winter,false,day);
+  assert.deepEqual(Array.from(earned.badges),['pass']);
+  assert.equal(earned.photo,true);
+  assert.equal(match.finish(winter,false,day).photo,false);
+  assert.equal(match.finish(YARDS.ru90_1,false,day).photo,true);
+  assert.equal(Save.data.collection.badges.length,1);
+  const reloaded = runtime(storage,true);
+  assert.deepEqual(Array.from(reloaded.Save.data.collection.photos['ru90_1:winter'].custom.props),['bench','coach']);
+  assert.equal(Object.keys(reloaded.Save.data.collection.photos).length,2);
 });
 test('era choices and earlier purchases survive switching yards', () => {
   const { Yards, Save } = runtime();

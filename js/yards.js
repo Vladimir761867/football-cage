@@ -115,6 +115,16 @@ Object.assign(BALLS.neon20, { decade: '20', price: 0 });
   BALLS[id] = { id, decade, era: RUSSIAN_COURTS.find(r => r[0] === decade)[1],
     name, material, atlas, filter, price, tint, c1: tint || '#f0eade', c2: '#263b52', style: 'penta' };
 });
+[
+  ['laced80','80','Карамельный со шнуровкой','сшитая кожа','#9d5c2f',140],
+  ['rubber90','90','Оранжевый резиновый','резина с чёрными панелями','#e87727',160],
+  ['cobalt00','00','Кобальтовые дуги','светлая синтетика с синими дугами','#4b76c8',180],
+  ['vortex10','10','Лаймовый вихрь','термопанели с тёмным рисунком','#b8ce3f',200],
+  ['violet20','20','Фиолетовая молния','фактурная оболочка с мятными вставками','#8558bf',220]
+].forEach(([id, decade, name, material, color, price], collectionCell) => {
+  BALLS[id] = { id, decade, name, material, price, collectionCell,
+    era: RUSSIAN_COURTS.find(row => row[0] === decade)[1], c1: color, c2: '#263b52', style: 'penta' };
+});
 
 /* Живые фоновые ассеты. Если браузер ещё не успел их загрузить,
    остаётся процедурный fallback ниже — игра не ждёт сеть. */
@@ -206,22 +216,29 @@ const Yards = (() => {
   function ballsForEra(era = ballEra()) {
     return Object.values(BALLS).filter(b => b.decade === era);
   }
+  function ownsBall(id) {
+    return Object.hasOwn(BALLS,id) && (Save.openCatalog || BALLS[id].price === 0 || Save.data.ownedBalls.includes(id));
+  }
   function syncBallToYard() {
     const era = ballEra();
     const remembered = Save.data.ballsByEra || (Save.data.ballsByEra = {});
     const currentBall = BALLS[Save.data.selectedBall];
-    if (currentBall && Save.data.ownedBalls.includes(currentBall.id)) remembered[currentBall.decade] = currentBall.id;
+    if (currentBall && ownsBall(currentBall.id)) remembered[currentBall.decade] = currentBall.id;
     const choices = ballsForEra(era);
-    const selected = choices.find(b => b.id === remembered[era] && Save.data.ownedBalls.includes(b.id))
+    const selected = choices.find(b => b.id === remembered[era] && ownsBall(b.id))
       || choices.find(b => b.price === 0);
-    if (!Save.data.ownedBalls.includes(selected.id)) Save.data.ownedBalls.push(selected.id);
+    if (selected.price === 0 && !Save.data.ownedBalls.includes(selected.id)) Save.data.ownedBalls.push(selected.id);
     Save.data.selectedBall = remembered[era] = selected.id;
     Save.save();
     return selected;
   }
   function ball() {
-    const selected = BALLS[Save.data.selectedBall];
-    return selected && selected.decade === ballEra() ? selected : ballsForEra().find(b => b.price === 0);
+    const era = ballEra();
+    const active = BALLS[Save.data.selectedBall];
+    if (active?.decade === era && ownsBall(active.id)) return active;
+    const remembered = BALLS[Save.data.ballsByEra?.[era]];
+    if (remembered?.decade === era && ownsBall(remembered.id)) return remembered;
+    return ballsForEra(era).find(b => b.price === 0);
   }
   function isRussia90(t) { return t.id === 'russia90' || t.baseArt === 'russia90'; }
 
@@ -416,6 +433,9 @@ const Yards = (() => {
     if (c.props.includes('boys')) {
       decoration(ctx, 'boys', w*.88, ground+14*unit, 112*unit);
     }
+    if (c.props.includes('coach')) {
+      decoration(ctx, 'coach', w*.09, ground+2*unit, 45*unit);
+    }
     if (c.props.includes('neighbor')) {
       const a = neighborWindow(w,h,g,t);
       ctx.fillStyle = '#1c2027';
@@ -432,7 +452,21 @@ const Yards = (() => {
     grandma: [89,0,436,671], boys: [660,0,583,661],
     neighbor: [0,677,598,569], bench: [605,785,658,405]
   };
+  const iberiaCells = {
+    grandma: [176,0,355,623], boys: [680,0,520,620],
+    neighbor: [65,650,590,596], coach: [818,619,241,627]
+  };
   function decoration(ctx, id, x, feet, size) {
+    if (Object.hasOwn(iberiaCells,id) && (id === 'coach' || theme().country === 'Испания')) {
+      const local = photoAsset('spectators-iberia');
+      if (ready(local)) {
+        const [sx,sy,sw,sh] = iberiaCells[id];
+        const height = size*sh/sw;
+        ctx.drawImage(local,sx,sy,sw,sh,x-size/2,feet-height,size,height);
+        return true;
+      }
+    }
+    if (!Object.hasOwn(decorationCells,id)) return false;
     const img = photoAsset('yard-spectators');
     if (!ready(img)) return false;
     const [sx, sy, sw, sh] = decorationCells[id];
@@ -449,17 +483,38 @@ const Yards = (() => {
     return { x: w*.80, y: Math.max(h*.15, g.y-g.h*.84) };
   }
 
-  function drawYardReaction(ctx, w, h, elapsed) {
+  const crowdLines = {
+    Россия: {
+      neighbor: ['Осторожнее с мячом!', 'Только не в окно!'], grandma: ['Хорошо играете, ребята!', 'Не торопись, посмотри!'],
+      boys: ['Давай, мы смотрим!', 'Хороший пас!'], coach: ['Подними голову!', 'Сыграй на свободного!'], goal: 'Вот это гол!'
+    },
+    Испания: {
+      neighbor: ['¡Cuidado con el balón!', '¡A la ventana no!'], grandma: ['¡Bien jugado, chicos!', '¡Con calma!'],
+      boys: ['¡Vamos, equipo!', '¡Buen pase!'], coach: ['¡Levanta la cabeza!', '¡Busca al compañero libre!'], goal: '¡Menudo golazo!'
+    }
+  };
+  function drawYardReaction(ctx, w, h, elapsed, goalTime) {
     const t = theme();
     if (t.season === 'winter') drawSnowfall(ctx, w, h, elapsed);
-    const phase = elapsed % 19;
-    if (!t.custom?.props.includes('neighbor') || phase < 12 || phase > 14.8) return;
-    const a = neighborWindow(w,h,goalGeometry(w,h),t);
-    const words = t.country === 'Испания' ? '¡Cuidado con el balón!' : 'Осторожнее с мячом!';
+    const props = t.custom?.props;
+    if (!props) return;
+    const people = ['neighbor','boys','grandma','coach'].filter(id => props.includes(id));
+    if (!people.length) return;
+    const goal = Number.isFinite(goalTime) && elapsed - goalTime < 2.4;
+    const phase = elapsed % 14;
+    if (!goal && (phase < 8 || phase > 10.6)) return;
+    const turn = Math.floor(elapsed/14);
+    const id = goal && people.includes('boys') ? 'boys' : people[turn % people.length];
+    const g = goalGeometry(w,h);
+    const unit = Math.min(w,h)/520;
+    const anchors = { boys: [.88,123], grandma: [.21,92], coach: [.09,88] };
+    const a = id === 'neighbor' ? neighborWindow(w,h,g,t) : { x: w*anchors[id][0], y: g.y-anchors[id][1]*unit+54 };
+    const lines = crowdLines[t.country] || crowdLines.Россия;
+    const words = goal ? lines.goal : lines[id][Math.floor(turn/people.length) % 2];
     ctx.save();
     ctx.font = '700 16px system-ui';
     const bw = ctx.measureText(words).width + 22;
-    const x = Math.min(w-bw-10, a.x-bw/2);
+    const x = Math.max(10,Math.min(w-bw-10, a.x-bw/2));
     ctx.fillStyle = 'rgba(30,27,29,.92)';
     ctx.beginPath(); ctx.roundRect(x, a.y-62, bw, 26, 7); ctx.fill();
     ctx.fillStyle = '#fff3da'; ctx.textAlign = 'center';
@@ -824,6 +879,16 @@ const Yards = (() => {
     }
     trails.set(ctx, trail);
     const b = ballDef || ball();
+    if (Number.isInteger(b.collectionCell)) {
+      const img = photoAsset('balls-collection');
+      if (ready(img)) {
+        const cell = img.naturalWidth/5, size = r*2.25;
+        const crop = Math.min(cell,img.naturalHeight);
+        const sy = (img.naturalHeight-crop)/2;
+        ctx.drawImage(img,b.collectionCell*cell+(cell-crop)/2,sy,crop,crop,x-size/2,y-size/2,size,size);
+        return;
+      }
+    }
     if (ready(ART.ballAtlas) && Number.isInteger(b.atlas)) {
       // Атлас состоит из пяти ячеек: кожа 80-х, классика 90-х,
       // глянец 2000-х, термопанель 2010-х и неон 2020-х.
@@ -912,7 +977,8 @@ const Yards = (() => {
       ctx.save(); ctx.strokeStyle='#a3ec75'; ctx.lineWidth=2;
       ctx.beginPath(); ctx.ellipse(x,y+2,19*s,6*s,0,0,Math.PI*2); ctx.stroke(); ctx.restore();
     }
-    if (Wardrobe.draw(ctx,x,y,s*.74,outfit,pose,motion || {})) return;
+    const shoes = me && Collections.hasShoesEquipped(era);
+    if (Wardrobe.draw(ctx,x,y,s*.74,outfit,pose,{ ...motion, shoes })) return;
     if (color === '#3f7fba' && pose !== 'keeper' && theme().custom) {
       color = {red:'#c0392b',green:'#7a9f4b',blue:color}[theme().custom.kit];
     }
@@ -1054,5 +1120,5 @@ const Yards = (() => {
     withScene(t, () => paintMenu(ctx, w, h));
   }
 
-  return { theme, editedTheme, seasonal, setScene, withScene, ball, ballEra, ballsForEra, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, drawYardReaction, drawFieldText, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
+  return { theme, editedTheme, seasonal, setScene, withScene, ball, ballEra, ballsForEra, ownsBall, syncBallToYard, goalGeometry, paintMenu, paintCourt, paintGoalScene, drawGoalFrame, drawBall, drawPlayer, paintPreview, drawYardReaction, drawFieldText, vignette, courtQuad, courtHasChalk, drawCourtMarks, drawEmote, artGoal, quadPoint, YARDS, BALLS };
 })();

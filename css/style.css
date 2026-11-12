@@ -195,6 +195,22 @@ html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--night)
 
 /* ---------- магазин ---------- */
 .shop-tabs{display:flex;gap:10px;margin-bottom:14px;}
+.shop-tab{min-width:0;white-space:nowrap;}
+.test-catalog{margin:0 0 12px;padding:8px 10px;color:#fae8bb;background:rgba(25,25,24,.78);border-radius:9px;font-size:12px;}
+.test-catalog.hidden{display:none;}
+.result-collection{margin-top:7px;color:#fff0b3;font-weight:700;font-size:13px;}
+.result-collection:empty{display:none;}
+.collection-row{display:flex;gap:9px;align-items:center;padding:9px 0;border-bottom:1px solid #cebea0;}
+.collection-row:last-child{border-bottom:0;}
+.collection-icon{min-width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:#d6c499;font-weight:800;font-size:18px;}
+.collection-row p{margin:2px 0 0;font-size:12px;}
+.collection-mark{color:#385927;font-size:11px;font-weight:800;}
+.collection-photo{display:block;width:100%;border:0;border-radius:10px;overflow:hidden;background:#e1d2ae;color:#2f271a;padding:0;text-align:left;cursor:pointer;}
+.collection-photo canvas{display:block;width:100%;aspect-ratio:2/1;}
+.collection-photo span{display:block;padding:8px 10px;font-weight:700;}
+.collection-large-photo{width:100%;aspect-ratio:5/4;border-radius:10px;display:block;background:#263343;}
+.outfit-preview.footwear-preview{height:114px;}
+.effect-preview{width:100%;height:auto;display:block;}
 .shop-tab{
   flex:1;border:none;border-radius:14px;padding:11px;font-weight:700;font-size:15px;
   background:rgba(240,230,210,.25);color:var(--chalk);cursor:pointer;}

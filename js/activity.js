@@ -115,6 +115,7 @@ const YardEditor = {
     grandma: 'Бабушка с семечками',
     boys: 'Районные ребята',
     neighbor: 'Соседка в окне',
+    coach: 'Дворовый тренер',
     lamp: 'Фонарь',
     flags: 'Флажки'
   },
@@ -134,6 +135,7 @@ const YardEditor = {
     return result;
   },
   available(field, value) {
+    if (Save.openCatalog) return true;
     const pack = Object.entries(this.packs).find(([, p]) => p.items[field] === value);
     return !pack || Save.data.editorPacks.includes(pack[0]);
   }

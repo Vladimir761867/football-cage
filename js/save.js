@@ -1,6 +1,7 @@
 /* Сохранение прогресса в localStorage. */
 const Save = (() => {
   const KEY = 'football-cage-save-v1';
+  const openCatalog = true;
   const def = () => ({
     coins: 0,
     ownedYards: ['classic'],
@@ -11,6 +12,7 @@ const Save = (() => {
     ballsByEra: {},
     ownedOutfits: [],
     outfitsByEra: {},
+    collection: { shoes: [], equippedShoes: {}, effects: [], effect: 'net', badges: [], photos: {} },
     difficulty: 'normal',
     cup: null,
     cupsWon: { square: 0, am300: 0 },
@@ -35,6 +37,17 @@ const Save = (() => {
       data.playStats = Object.assign(def().playStats, parsed.playStats || {});
       data.ownedOutfits = Array.isArray(parsed.ownedOutfits) ? parsed.ownedOutfits.filter(x => typeof x === 'string') : [];
       data.outfitsByEra = parsed.outfitsByEra && typeof parsed.outfitsByEra === 'object' && !Array.isArray(parsed.outfitsByEra) ? parsed.outfitsByEra : {};
+      const collection = def().collection;
+      for (const key of ['shoes', 'effects', 'badges']) {
+        const values = parsed.collection?.[key];
+        if (Array.isArray(values)) collection[key] = values.filter(value => typeof value === 'string');
+      }
+      for (const key of ['equippedShoes', 'photos']) {
+        const value = parsed.collection?.[key];
+        if (value && typeof value === 'object' && !Array.isArray(value)) collection[key] = value;
+      }
+      if (typeof parsed.collection?.effect === 'string') collection.effect = parsed.collection.effect;
+      data.collection = collection;
     }
   } catch (e) { /* повреждённое сохранение — начинаем заново */ }
 
@@ -50,5 +63,5 @@ const Save = (() => {
     if (v > (data.best[mode] || 0)) { data.best[mode] = v; save(); return true; }
     return false;
   }
-  return { get data() { return data; }, save, addCoins, spendCoins, setBest };
+  return { get data() { return data; }, openCatalog, save, addCoins, spendCoins, setBest };
 })();

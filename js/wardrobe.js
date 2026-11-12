@@ -14,7 +14,7 @@ const Wardrobe = (() => {
   ]).map(item => [item.id,item]));
   const assets = new Map();
   const list = era => Object.values(catalog).filter(item => item.era === era);
-  const owns = id => !!catalog[id] && (catalog[id].price === 0 || Save.data.ownedOutfits.includes(id));
+  const owns = id => Object.hasOwn(catalog,id) && (Save.openCatalog || catalog[id].price === 0 || Save.data.ownedOutfits.includes(id));
   function selected(era) {
     const id = Save.data.outfitsByEra[era];
     return catalog[id]?.era === era && owns(id) ? catalog[id] : catalog[era+'-street'] || catalog['90-street'];
@@ -26,8 +26,8 @@ const Wardrobe = (() => {
     return true;
   }
   function buy(id) {
+    if (!Object.hasOwn(catalog,id)) return false;
     const item = catalog[id];
-    if (!item) return false;
     if (!owns(id)) {
       if (Save.data.coins < item.price) return false;
       Save.data.coins -= item.price;
@@ -37,10 +37,43 @@ const Wardrobe = (() => {
   }
   // Сервер принимает только известные комплекты эпохи сетевой площадки.
   function roomOutfit(id) { return catalog[id]?.era === '90' ? id : '90-street'; }
-  function load(era) {
-    if (assets.has(era)) return assets.get(era);
+  function shoeFrame(pixels,stride,x,y,w,h) {
+    // Выбираем основной силуэт, чтобы в кадр не попал край соседней позы.
+    const visited = new Uint8Array(w*h);
+    const queue = new Int32Array(w*h);
+    let best = null;
+    function add(index) {
+      if (visited[index]) return;
+      visited[index] = 1;
+      const at = ((y+Math.floor(index/w))*stride+x+index%w)*4+3;
+      if (pixels[at] >= 144) queue[tail++] = index;
+    }
+    let tail = 0;
+    for (let index=0; index<visited.length; index++) {
+      tail = 0;
+      add(index);
+      if (!tail) continue;
+      let left=w, right=0, top=h, bottom=0;
+      for (let head=0; head<tail; head++) {
+        const at = queue[head], col = at%w, row = Math.floor(at/w);
+        left=Math.min(left,col); right=Math.max(right,col);
+        top=Math.min(top,row); bottom=Math.max(bottom,row);
+        if (col>0) add(at-1);
+        if (col<w-1) add(at+1);
+        if (row>0) add(at-w);
+        if (row<h-1) add(at+w);
+      }
+      if (!best || tail>best.area) best={left,right,top,bottom,area:tail};
+    }
+    if (!best) return {x,y,w,h};
+    const left = Math.max(0,best.left-2), top = Math.max(0,best.top-2);
+    return {x:x+left,y:y+top,w:Math.min(w,best.right+3)-left,h:Math.min(h,best.bottom+3)-top};
+  }
+  function load(era, shoes = false) {
+    const key = (shoes ? 'shoes-' : 'outfits-') + era;
+    if (assets.has(key)) return assets.get(key);
     const asset = {image:new Image(), frames:null, failed:false};
-    assets.set(era,asset);
+    assets.set(key,asset);
     asset.image.addEventListener('load', () => {
       const image = asset.image, cw = image.naturalWidth/4, ch = image.naturalHeight/4;
       const canvas = document.createElement('canvas');
@@ -51,6 +84,7 @@ const Wardrobe = (() => {
       asset.frames = Array.from({length:16}, (_,index) => {
         const sx = Math.round(index%4*cw), sy = Math.round(Math.floor(index/4)*ch);
         const ex = Math.round((index%4+1)*cw), ey = Math.round((Math.floor(index/4)+1)*ch);
+        if (shoes) return shoeFrame(pixels,canvas.width,sx,sy,ex-sx,ey-sy);
         let left=ex, right=sx, top=ey, bottom=sy;
         for (let y=sy; y<ey; y++) for (let x=sx; x<ex; x++) {
           if (pixels[(y*canvas.width+x)*4+3] < 32) continue;
@@ -63,13 +97,14 @@ const Wardrobe = (() => {
     asset.image.addEventListener('error', () => {
       asset.failed=true; window.dispatchEvent(new Event('wardrobe-ready'));
     });
-    asset.image.src='assets/outfits-'+era+'.webp?v=20261112-16';
+    asset.image.src = 'assets/' + key + '.webp?v=' + (shoes ? '20' : '20261112-16');
     return asset;
   }
   function draw(ctx,x,y,size,id,pose,motion={}) {
     const item=catalog[id];
     if (!item) return false;
-    const asset=load(item.era);
+    const customShoes = motion.shoes ? load(item.era,true) : null;
+    const asset = customShoes?.frames ? customShoes : load(item.era);
     if (!asset.frames) return false;
     const phase=Number.isFinite(motion.phase) ? motion.phase : performance.now()/240;
     const diving=pose==='keeper' && motion.dive;
@@ -89,6 +124,17 @@ const Wardrobe = (() => {
     ctx.restore();
     return true;
   }
-  return {eras,catalog,list,owns,selected,equip,buy,roomOutfit,load,draw};
+  function drawFootwear(ctx,w,h,id,special) {
+    const item = catalog[id];
+    const asset = load(item.era,special);
+    if (!asset.frames) return false;
+    const frame = asset.frames[item.row*4+4];
+    const crop = Math.round(frame.h*.23);
+    const scale = Math.min(w*.72/frame.w,h*.72/crop);
+    ctx.drawImage(asset.image,frame.x,frame.y+frame.h-crop,frame.w,crop,
+      (w-frame.w*scale)/2,(h-crop*scale)/2,frame.w*scale,crop*scale);
+    return true;
+  }
+  return {eras,catalog,list,owns,selected,equip,buy,roomOutfit,load,draw,drawFootwear};
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = Wardrobe;

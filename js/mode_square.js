@@ -150,6 +150,7 @@ class SquareMode {
     }
     if (this.holder === 0) {
       this.score++;
+      this.env.collect?.('return');
       this.env.progress?.('return');
       if (this.env.tutorial) { this.env.learned?.(); return; }
     }

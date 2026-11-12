@@ -131,12 +131,15 @@ class Am300Mode {
     else if (pts > 0) { Sound.pass(); this.env.hud.toast(`+${pts}`, 'good'); }
     else { Sound.miss(); this.env.hud.toast(f.issue || 'Мимо', 'bad'); }
     this.env.progress?.(z.id);
+    const scored = z.id === 'goal' || z.id === 'corner';
+    if (scored) this.env.goal?.(to);
+    this.env.collect?.(z.id);
     this.targets.add(z.id);
     if (this.env.challenge?.distinct) {
       const names = {post:'Штанга',bar:'Перекладина',corner:'Девятка'};
       this.env.hud.hint(this.env.challenge.events.map(id => (this.targets.has(id) ? '✓ ' : '○ ') + names[id]).join('  ·  '));
     }
-    if (pts && f.from) this.env.highlight?.({ from:f.from, to, arc:70, goal:{...this.goal}, label, value:pts });
+    if (pts && f.from) this.env.highlight?.({ from:f.from, to, arc:70, goal:{...this.goal}, label, value:pts, scored });
     if (this.env.tutorial) {
       if (pts) this.env.learned?.();
       else {

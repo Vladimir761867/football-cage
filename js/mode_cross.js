@@ -209,6 +209,8 @@ class CrossMode {
     const shooter = this.shooterIndex, keeper = this.keeperIndex;
     const points = saved ? 0 : potential;
     const reason = saved ? 'Вратарь отбил!' : shot.reason;
+    if (points && shooter === 0) this.env.goal?.(shot.to);
+    if (saved && keeper === 0) this.env.collect?.('save');
     this._lastShooter = shooter;
     this._lastKeeper = keeper;
     this._lastGoal = points > 0;
@@ -223,7 +225,7 @@ class CrossMode {
     if ((points && shooter === 0) || (saved && keeper === 0)) {
       this.env.highlight?.({
         from: shot.from, to: shot.to, arc: 24, goal: { ...this.goal },
-        rebound: shot.rebound?.to, label: saved ? 'Сейв' : reason
+        rebound: shot.rebound?.to, label: saved ? 'Сейв' : reason, scored: !saved
       });
     }
     if (points && shooter === 0) this.env.progress?.('goal');
