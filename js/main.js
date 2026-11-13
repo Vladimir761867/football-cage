@@ -191,7 +191,7 @@
     hud.timing(null);
     $('#btn-skip-lesson').classList.toggle('hidden', !options.tutorial);
     // Keep the arena stable while the action buttons appear and disappear during a rally.
-    $('#match-actions').hidden = !options.tutorial && id !== 'cross' && !options.online;
+    $('#match-actions').hidden = !options.tutorial && id !== 'cross' && !options.online && options.practice !== 'keeper';
     choose([]);
     const canvas = $('#match-canvas');
     if (gesture) gesture.destroy();
@@ -442,6 +442,7 @@
       <div class="feature-stack">
         <button class="btn btn-primary" data-practice="solo">Американка · 5 ударов</button>
         <button class="btn btn-green" data-practice="keeper">Против вратаря · 10 ударов</button>
+        <p class="feature-small">Прямые и кручёные удары.</p>
         <button class="btn btn-paper" data-close>Назад</button>
       </div>`);
     function update() {
@@ -679,9 +680,10 @@
       const t = U.clamp(elapsed / 800, 0, 1);
       const k = U.easeOut(t);
       const rebound = clip.rebound ? U.clamp((elapsed - 800) / 320, 0, 1) : 0;
-      const x = rebound ? U.lerp(clip.to.x, clip.rebound.x, rebound) : U.lerp(clip.from.x, clip.to.x, k);
-      const y = rebound ? U.lerp(clip.to.y, clip.rebound.y, rebound) - Math.sin(rebound * Math.PI) * 12 :
-        U.lerp(clip.from.y, clip.to.y, k) - Math.sin(k * Math.PI) * clip.arc;
+      const { x, y } = rebound ? {
+        x: U.lerp(clip.to.x, clip.rebound.x, rebound),
+        y: U.lerp(clip.to.y, clip.rebound.y, rebound) - Math.sin(rebound * Math.PI) * 12
+      } : ShotRules.flightPoint(clip, k);
       const flying = t < 1 || Boolean(clip.rebound && rebound < 1);
       const playing = flying || Boolean(clip.effect && elapsed < 1650);
       Yards.withScene(clip.yard, () => {
@@ -1266,7 +1268,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 13.11.2026 · 24</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 13.11.2026 · 25</p>
       <button class="btn btn-green" id="btn-update-game" ${nativeAndroid ? 'hidden' : ''} style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <p><a href="privacy.html">Политика конфиденциальности</a></p>

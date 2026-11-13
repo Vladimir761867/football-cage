@@ -279,6 +279,12 @@ const I18n = (() => {
 Отпускай!|Release!|¡Suelta!|松手！|Solte!|छोड़ें!
 Дождись золотой зоны|Wait for the gold zone|Espera la zona dorada|等待金色区域|Espere a zona dourada|सुनहरे हिस्से का इंतज़ार करें
 Проведи вверх для прицела|Swipe up to aim|Desliza hacia arriba para apuntar|向上滑动瞄准|Deslize para cima para mirar|निशाना लगाने के लिए ऊपर स्वाइप करें
+Прямые и кручёные удары.|Straight and curved shots.|Tiros rectos y con efecto.|直射和弧线球。|Chutes retos e com curva.|सीधे और घुमावदार शॉट।
+Выбери удар и веди пальцем вверх. Пунктир покажет полёт.|Choose a shot and swipe up. The dotted line shows the flight path.|Elige el tiro y desliza hacia arriba. La línea de puntos indica la trayectoria.|选择射门方式后向上滑动。虚线显示球路。|Escolha o chute e deslize para cima. O pontilhado mostra a trajetória.|शॉट चुनें और ऊपर स्वाइप करें। बिंदीदार रेखा गेंद का रास्ता दिखाती है।
+Вратарь отбил. Попробуй целиться дальше от него.|Saved. Try aiming farther from the keeper.|El portero paró el tiro. Apunta más lejos de él.|守门员扑出了。试着瞄准离他更远的位置。|O goleiro defendeu. Mire mais longe dele.|गोलकीपर ने बचाया। उससे दूर निशाना लगाएँ।
+Влево|Left|Izquierda|左弧线|Esquerda|बाईं ओर
+Прямой|Straight|Recto|直射|Reto|सीधा
+Вправо|Right|Derecha|右弧线|Direita|दाईं ओर
 `.trim().split('\n').map(line => line.split('|'));
   const originals = new WeakMap();
   const attributes = new WeakMap();

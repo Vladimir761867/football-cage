@@ -76,6 +76,33 @@ test('the same placed shot beats the beginner keeper and is saved on expert', ()
   assert.deepEqual(shot('expert'),[0,1]);
 });
 
+test('keeper practice keeps the selected bend and launches the path shown by the preview', () => {
+  const { Am300Mode, ShotRules } = runtime();
+  const e = env();
+  let controls;
+  const mode = new Am300Mode({...e,opponentCount:0,practice:'keeper',choose:options => { controls = options; }});
+  assert.equal(controls.findIndex(option => option.selected),1);
+  const drag = {dx:0,dy:-450};
+  const straight = mode._shot(drag);
+  controls[0].action();
+  const preview = mode._shot(drag);
+  assert.ok(preview.to.x < straight.to.x);
+  assert.ok(ShotRules.flightPoint(preview,.5).x > ShotRules.flightPoint(straight,.5).x);
+  e.gesture.onEnd(drag);
+  assert.deepEqual(mode.fly.to,preview.to);
+  assert.deepEqual(ShotRules.flightPoint(mode.fly,1),preview.to);
+  mode._impact();
+  assert.equal(mode._shot(drag).bend,preview.bend);
+  controls[2].action();
+  const right = mode._shot(drag);
+  assert.ok(right.to.x > straight.to.x);
+  assert.ok(ShotRules.flightPoint(right,.5).x < ShotRules.flightPoint(straight,.5).x);
+  controls = null;
+  const competitive = new Am300Mode({...env(),choose:options => { controls = options; }});
+  assert.equal(controls,null);
+  assert.equal(competitive._shot(drag).bend,0);
+});
+
 test('new countries have a free and a paid court, aligned targets and independent outfits', () => {
   const { Save, Yards, YARDS, Wardrobe, Am300Mode, CrossMode } = runtime(new Map(),true);
   for (const country of ['Бразилия','Китай','Индия']) {

@@ -21,7 +21,14 @@ const ShotRules = {
     const reach = (ball.y - (goal.y - goal.h) + 40) * power;
     return { x:ball.x + drag.dx / (len || 1) * reach * .9, y:ball.y + drag.dy / (len || 1) * reach };
   },
-  kick(goal, ball, drag, maxDrag, phase, cfg, random = Math.random) {
+  // bend is the lateral offset at the middle of the flight, relative to the straight line.
+  flightPoint({ from, to, bend = 0, arc = 70 }, t) {
+    return {
+      x: from.x + (to.x - from.x) * t - bend * 4 * t * (1 - t),
+      y: from.y + (to.y - from.y) * t - Math.sin(t * Math.PI) * arc
+    };
+  },
+  kick(goal, ball, drag, maxDrag, phase, cfg, random = Math.random, spin = 0) {
     const power = Math.min(1.1, Math.hypot(drag.dx, drag.dy) / maxDrag);
     const timing = Math.abs(Math.sin(phase * (cfg.rate ?? 4.6)));
     const golden = timing < cfg.window;
@@ -31,12 +38,14 @@ const ShotRules = {
     // влево или вправо предсказуем при одинаковом жесте и тайминге.
     const a = cfg.rate ? (Math.sin(phase * cfg.rate) < 0 ? Math.PI*.93 : Math.PI*.07) : random() * Math.PI * 2;
     const aim = this.aim(goal, ball, drag, maxDrag);
+    const bend = spin * goal.w * .32 * Math.min(1, power);
+    aim.x += bend * .75;
     const to = { x:aim.x + Math.cos(a) * drift, y:aim.y + Math.sin(a) * drift * .7 };
     if (power < .30) to.y = goal.y - 6;
     const zone = this.zone(goal, to.x, to.y);
     const issue = power < .35 ? 'Слабый удар' : power > .97 ? 'Слишком сильный удар'
       : !golden && zone.id !== this.zone(goal, aim.x, aim.y).id ? 'Отпусти ближе к золотой зоне' : 'Поправь направление';
-    return { from: {...ball}, to, zone, golden, issue, t:0, dur:.38 + timing * .12 };
+    return { from: {...ball}, to, bend, zone, golden, issue, t:0, dur:.38 + timing * .12 };
   }
 };
 if (typeof module !== 'undefined') module.exports = ShotRules;

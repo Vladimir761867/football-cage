@@ -32,6 +32,12 @@ class Am300Mode {
     this.keeperX = this.goal.x + this.goal.w/2;
     this.keeperDive = 0;
     this.saves = 0;
+    this.spin = 0;
+    if (this.keeperCfg) env.choose?.([
+      {text:'↶ Влево', selected:false, action:() => { this.spin = -1; }},
+      {text:'Прямой', selected:true, action:() => { this.spin = 0; }},
+      {text:'Вправо ↷', selected:false, action:() => { this.spin = 1; }}
+    ]);
 
     env.hud.setPills([
       { id: 'you', lbl: this.keeperCfg ? 'Голы' : 'Ты', val: 0 },
@@ -40,7 +46,7 @@ class Am300Mode {
       ...this.opponents.map((p, i) => ({ id: `bot${i}`, lbl: p.name, val: 0 }))
     ]);
     env.hud.setTimer(env.challenge || env.tutorial || env.quick || env.practice ? '🎯' : '🎯300');
-    env.hud.hint(this.keeperCfg ? 'Целься мимо вратаря. Отпусти свайп в золотой зоне.' :
+    env.hud.hint(this.keeperCfg ? 'Выбери удар и веди пальцем вверх. Пунктир покажет полёт.' :
       env.tutorial ? 'Свайпни вверх к центру ворот. Пунктир покажет цель.' :
       env.challenge?.description || 'Свайп вверх. Отпусти, когда бегунок в золотой зоне.');
     this._showTiming();
@@ -53,7 +59,7 @@ class Am300Mode {
       if (this.state !== 'aim') return;
       this.drag = d;
       // прицел = направление жеста от мяча
-      this.aim = ShotRules.aim(this.goal, this.ballPos, d, this.maxDrag);
+      if (!this.keeperCfg) this.aim = ShotRules.aim(this.goal, this.ballPos, d, this.maxDrag);
     };
     env.gesture.onEnd = d => {
       this.drag = null;
@@ -64,14 +70,8 @@ class Am300Mode {
   }
 
   _ballNow() {
-    if (this.state === 'fly' && this.fly) {
-      const f = this.fly, tt = U.easeOut(U.clamp(f.t, 0, 1));
-      return { x: U.lerp(f.from.x, f.to.x, tt), y: U.lerp(f.from.y, f.to.y, tt) - Math.sin(tt * Math.PI) * 70 };
-    }
-    if (this.botFly) {
-      const f = this.botFly, tt = U.easeOut(U.clamp(f.t, 0, 1));
-      return { x: U.lerp(f.from.x, f.to.x, tt), y: U.lerp(f.from.y, f.to.y, tt) - Math.sin(tt * Math.PI) * 70 };
-    }
+    const flight = this.state === 'fly' ? this.fly : this.botFly;
+    if (flight) return ShotRules.flightPoint(flight, U.easeOut(U.clamp(flight.t, 0, 1)));
     return { x: this.ballPos.x, y: this.ballPos.y };
   }
   _drawActors(ctx, W, H) {
@@ -115,13 +115,17 @@ class Am300Mode {
 
   _shoot(drag) {
     this.state = 'fly';
-    this.fly = ShotRules.kick(this.goal, this.ballPos, drag, this.maxDrag, this.oscT, this.cfg, this.random);
+    this.fly = this._shot(drag);
     if (this.keeperCfg) {
       this.fly.dur += .12;
       this.keeperDive = 0;
     }
     this.aim = null;
     Sound.kick();
+  }
+
+  _shot(drag) {
+    return ShotRules.kick(this.goal, this.ballPos, drag, this.maxDrag, this.oscT, this.cfg, this.random, this.spin);
   }
 
   _showTiming() {
@@ -304,8 +308,11 @@ class Am300Mode {
     const f = this.fly;
     let target = middle + Math.sin(this.oscT*1.4)*g.w*.12;
     if (f && f.t*f.dur >= cfg.reaction) {
-      target = U.lerp(middle,f.to.x,cfg.read);
-      if (!this.keeperDive && f.t > .68 && Math.abs(f.to.x-this.keeperX) > g.w*.055) this.keeperDive = Math.sign(f.to.x-this.keeperX);
+      // Extrapolate from the current flight direction; the keeper reads the final bend late.
+      const remaining = 1 - U.easeOut(U.clamp(f.t, 0, 1));
+      const predicted = f.to.x - (f.bend || 0) * 4 * remaining ** 2 * (1 - cfg.read);
+      target = U.lerp(middle,predicted,cfg.read);
+      if (!this.keeperDive && f.t > .68 && Math.abs(predicted-this.keeperX) > g.w*.055) this.keeperDive = Math.sign(predicted-this.keeperX);
     }
     if (this.state === 'impact') return;
     this.keeperX = U.clamp(this.keeperX + U.clamp(target-this.keeperX,-cfg.speed*g.w*dt,cfg.speed*g.w*dt),
@@ -332,9 +339,11 @@ class Am300Mode {
       this.env.collect?.('keeperGoal');
       this.env.hud.setPill('you',this.you);
     }
-    if (onTarget) this.env.highlight?.({from:f.from,to:at,arc:70,goal:{...g},label,scored,rebound,value:scored ? 2 : 1});
+    if (onTarget) this.env.highlight?.({from:f.from,to:at,bend:f.bend,arc:70,goal:{...g},label,scored,rebound,value:scored ? 2 : 1});
     scored ? Sound.goal() : saved ? Sound.pass() : Sound.miss();
-    this.env.hud.toast(label,scored ? 'good' : saved ? 'bad' : '');
+    const feedback = saved ? 'Вратарь отбил. Попробуй целиться дальше от него.' :
+      zone.id === 'miss' && f.issue ? `Мимо · ${f.issue}` : label;
+    this.env.hud.toast(feedback,scored ? 'good' : saved ? 'bad' : '');
     this.fly = null;
     this.ballsLeft--;
     this.env.hud.setPill('balls',this.ballsLeft);
@@ -401,17 +410,9 @@ class Am300Mode {
       const r = this.rebound;
       Yards.drawBall(ctx,U.lerp(r.from.x,r.to.x,r.t),U.lerp(r.from.y,r.to.y,r.t)-Math.sin(r.t*Math.PI)*24,12,undefined,true);
     }
-    if (this.state === 'aim' && this.aim && this.drag) {
-      // траектория-пунктир
-      ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 4; ctx.setLineDash([10, 10]);
-      ctx.beginPath(); ctx.moveTo(this.ballPos.x, this.ballPos.y);
-      ctx.quadraticCurveTo((this.ballPos.x + this.aim.x) / 2, this.aim.y - 60, this.aim.x, this.aim.y);
-      ctx.stroke(); ctx.setLineDash([]);
-      // прицел
-      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(this.aim.x, this.aim.y, 14, 0, 7); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(this.aim.x - 20, this.aim.y); ctx.lineTo(this.aim.x + 20, this.aim.y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(this.aim.x, this.aim.y - 20); ctx.lineTo(this.aim.x, this.aim.y + 20); ctx.stroke();
+    if (this.state === 'aim' && this.drag && (this.keeperCfg || this.aim)) {
+      if (this.keeperCfg) this._drawKeeperAim(ctx);
+      else this._drawStraightAim(ctx);
       U.drawPower(ctx, this.drag, this.maxDrag);
     }
     // удар соперника: мяч летит в видимую точку
@@ -421,9 +422,8 @@ class Am300Mode {
     }
     // полёт
     if (this.state === 'fly' && this.fly) {
-      const f = this.fly, tt = U.easeOut(U.clamp(f.t, 0, 1));
-      const x = U.lerp(f.from.x, f.to.x, tt);
-      const y = U.lerp(f.from.y, f.to.y, tt) - Math.sin(tt * Math.PI) * 70;
+      const tt = U.easeOut(U.clamp(this.fly.t, 0, 1));
+      const { x, y } = this._ballNow();
       Yards.drawBall(ctx, x, y, U.lerp(15, 8, tt), undefined, true);
     }
     // точка попадания
@@ -435,6 +435,38 @@ class Am300Mode {
       ctx.beginPath(); ctx.arc(this.impactFx.x, this.impactFx.y, 12 + this.impactFx.t * 40, 0, 7); ctx.stroke();
       ctx.globalAlpha = 1;
     }
+  }
+
+  _drawStraightAim(ctx) {
+    ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 4; ctx.setLineDash([10, 10]);
+    ctx.beginPath(); ctx.moveTo(this.ballPos.x, this.ballPos.y);
+    ctx.quadraticCurveTo((this.ballPos.x + this.aim.x) / 2, this.aim.y - 60, this.aim.x, this.aim.y);
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(this.aim.x, this.aim.y, 14, 0, 7); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.aim.x - 20, this.aim.y); ctx.lineTo(this.aim.x + 20, this.aim.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.aim.x, this.aim.y - 20); ctx.lineTo(this.aim.x, this.aim.y + 20); ctx.stroke();
+  }
+
+  _drawKeeperAim(ctx) {
+    const shot = this._shot(this.drag), { x, y } = shot.to;
+    ctx.save();
+    ctx.strokeStyle = '#181410'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+    ctx.setLineDash([8, 12]);
+    ctx.beginPath(); ctx.moveTo(shot.from.x, shot.from.y);
+    for (let i = 1; i <= 28; i++) {
+      const point = ShotRules.flightPoint(shot, i / 28);
+      ctx.lineTo(point.x, point.y);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = shot.golden ? '#ffdc75' : '#fff7ea'; ctx.lineWidth = 5; ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2);
+    ctx.strokeStyle = '#181410'; ctx.lineWidth = 10; ctx.stroke();
+    ctx.strokeStyle = shot.golden ? '#ffdc75' : '#fff7ea'; ctx.lineWidth = 5; ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   _finish(won, draw = false) {
