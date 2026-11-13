@@ -11,7 +11,7 @@
 
 Выбирайте один из пяти уровней, участвуйте в кубках против ботов или тренируйте удары по мишеням и против вратаря. Собирайте нашивки и фотографии, выбирайте дворы, форму, обувь и мячи. Коллекции бесплатны. Для игры интернет не нужен.
 
-**Поддержка:** [страница проекта на GitHub](https://github.com/Vladimir761867/football-cage/issues). Для карточки Google Play владелец должен указать публичный email поддержки. [Требование Google Play](https://support.google.com/googleplay/android-developer/answer/9859152).
+**Поддержка:** `gfg-games-2026@ya.ru`; также доступна [страница проекта на GitHub](https://github.com/Vladimir761867/football-cage/issues). [Требование Google Play](https://support.google.com/googleplay/android-developer/answer/9859152).
 
 **Политика:** [публичная страница](https://vladimir761867.github.io/football-cage/privacy.html).
 
