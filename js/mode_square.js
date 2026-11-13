@@ -297,7 +297,8 @@ class SquareMode {
       Yards.drawPlayer(ctx, p.x, p.y, s, ['#3f7fba', '#c0392b', '#7a9f4b', '#4e9fd1'][i], 'field',
         { phase: n.phase, moving: !!n.moving, face: !n.moving && ball ? (ball.x < p.x - 3 ? -1 : 1) : n.face, kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .2) : false });
       ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
-      ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
+      ctx.font = i === 0 ? '900 20px Rubik, system-ui' : `900 ${Math.round(15 * s)}px Rubik, system-ui`;
+      ctx.textAlign = 'center';
       Yards.drawFieldText(ctx, i === 0 ? 'ТЫ' : `${i + 1}`, p.x, p.y + 20 * s);
       ctx.fillStyle = this.errors[i] >= 7 ? '#ff8d7a' : 'rgba(255,210,77,.9)';
       ctx.font = `700 ${Math.round(11 * s)}px Rubik`;
@@ -311,7 +312,7 @@ class SquareMode {
       ctx.beginPath(); ctx.arc(t.x, t.y, 5, 0, 7); ctx.fill();
     });
     ctx.globalAlpha = 1;
-    if (ball) Yards.drawBall(ctx, ball.x, ball.y, 12 * ballScale);
+    if (ball) Yards.drawBall(ctx, ball.x, ball.y, 15 * ballScale);
 
     if (this.aimDrag) {
       U.drawAim(ctx, this.aimDrag, 'rgba(255,255,255,.95)');

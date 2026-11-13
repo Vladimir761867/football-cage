@@ -45,8 +45,9 @@ class CrossMode {
       { id: 'keeper', lbl: 'На воротах', val: 'Игрок 4' }
     ]);
     env.hud.setTimer('⚽');
-    env.hud.hint(this.attackOnly ? 'Партнёры подают. Отпусти свайп к углу ворот, пока кольцо золотое.' :
+    env.hud.hint(this.attackOnly ? 'Свайп вверх или кнопка угла по сигналу «Бей сейчас!».' :
       'Навес: проведи к углу ворот. Промахнулся — идёшь в ворота');
+    this._showTiming();
     env.gesture.onStart = () => {
       this.keeperGesture = this.keeperIndex === 0 && this.state === 'shot' ? this.shot : null;
     };
@@ -156,7 +157,11 @@ class CrossMode {
     b.kickT = .25;
     this.state = 'serve';
     this.flight = { t: 0, dur: this.env.tutorial ? 2.75 : this.cfg.flight, from: { x: b.x, y: b.y - 30 } };
-    this.env.hud.hint(this.shooterIndex === 0 ? 'Свайп к углу. Отпусти палец, пока кольцо золотое.' :
+    if (this.shooterIndex === 0) this.env.choose?.([
+      { text:'↖ В левый угол', command:true, action:() => this._strike({dx:-36,dy:-58}) },
+      { text:'↗ В правый угол', command:true, action:() => this._strike({dx:36,dy:-58}) }
+    ]);
+    this.env.hud.hint(this.shooterIndex === 0 ? 'Свайп вверх или кнопка угла по сигналу «Бей сейчас!».' :
       this.keeperIndex === 0 ? 'Ты в воротах. Дождись удара!' : `${this._name(this.shooterIndex)} бьёт. Следи за навесом`);
     Sound.pass();
   }
@@ -166,6 +171,7 @@ class CrossMode {
       y: U.lerp(this.flight.from.y, this.landing.y, t) - Math.sin(t * Math.PI) * this.env.H * .22 };
   }
   _strike(d) {
+    if (this.state !== 'serve' || this.shooterIndex !== 0) return;
     const t = this.flight.t / this.flight.dur;
     const side = d.dx < 0 ? -1 : 1;
     let pts = 0, reason = '';
@@ -197,6 +203,7 @@ class CrossMode {
       potential, reason, side, playerCanSave, saved: false
     };
     this.state = 'shot';
+    this.env.choose?.([]);
     this.players[this.shooterIndex].kickT = .3;
     Sound.pass();
     if (playerCanSave) {
@@ -345,6 +352,21 @@ class CrossMode {
         if (shot.t >= 1) this._finishShot();
       }
     }
+    this._showTiming();
+  }
+
+  _showTiming() {
+    if (this.state === 'serve' && this.shooterIndex === 0) {
+      const progress = U.clamp(this.flight.t / this.flight.dur, 0, 1);
+      const [start, end] = this.contact, ready = progress >= start && progress <= end;
+      if (ready && !this.contactSignaled) Sound.contact();
+      this.contactSignaled = ready;
+      this.env.hud.timing?.({ progress, start, end, ready,
+        label: ready ? 'Бей сейчас!' : progress < start ? 'Мяч летит…' : 'Бей быстрее!' });
+      return;
+    }
+    this.contactSignaled = false;
+    this.env.hud.timing?.({ label: this.state === 'shot' ? 'Удар по воротам' : 'Готовится навес' });
   }
   draw(ctx) {
     const { W, H } = this.env;
@@ -382,7 +404,9 @@ class CrossMode {
           kick: (this.state === 'shot' && i === this.shooterIndex) || p.kickT > 0 ? (p.kickT > 0 ? Math.min(1, 1.01 - p.kickT / .25) : true) : false,
           celebrate: inWait && this._lastGoal && i === this._lastShooter,
           catch: inWait && ((this._lastSaved && i === this._lastKeeper) || (!this._lastGoal && i === this.keeperIndex)) });
-      ctx.fillStyle = '#fdf7e8'; ctx.font = '700 13px Rubik'; ctx.textAlign = 'center';
+      ctx.fillStyle = i === 0 ? '#b1ff89' : '#fdf7e8';
+      ctx.font = i === 0 ? '900 21px Rubik, system-ui' : '700 14px Rubik, system-ui';
+      ctx.textAlign = 'center';
       Yards.drawFieldText(ctx, this._name(i) + (keeper ? ' 🧤' : ''), p.x, p.y + 17);
       // мимика: после удара
       if (inWait && this.waitT > .1) {
@@ -398,10 +422,12 @@ class CrossMode {
     }
     if (this.state === 'serve') {
       const t = this.flight.t / this.flight.dur;
-      ctx.strokeStyle = t >= this.contact[0] && t <= this.contact[1] ? '#ffd24d' : 'rgba(255,255,255,.7)';
-      ctx.lineWidth = 4; ctx.beginPath();
-      ctx.ellipse(this.landing.x, this.landing.y, 30 - t * 14, 14 - t * 5, 0, 0, 7); ctx.stroke();
-      const b = this._ballPos(); Yards.drawBall(ctx, b.x, b.y, 11 + t * 3, undefined, true);
+      const ready = t >= this.contact[0] && t <= this.contact[1];
+      ctx.beginPath();
+      ctx.ellipse(this.landing.x, this.landing.y, 32 - t * 10, 14 - t * 4, 0, 0, 7);
+      ctx.strokeStyle = '#171410'; ctx.lineWidth = 10; ctx.stroke();
+      ctx.strokeStyle = ready ? '#ffd24d' : '#fff5de'; ctx.lineWidth = 5; ctx.stroke();
+      const b = this._ballPos(); Yards.drawBall(ctx, b.x, b.y, 15 + t * 3, undefined, true);
     }
     if (this.state === 'shot' && bp) {
       Yards.drawBall(ctx, bp.x, bp.y, 12, undefined, true);

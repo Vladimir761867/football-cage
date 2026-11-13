@@ -1,7 +1,8 @@
 /* Один жест «потяни и отпусти» для всех режимов. */
 class Gesture {
-  constructor(canvas) {
+  constructor(canvas, camera = null) {
     this.canvas = canvas;
+    this.camera = camera;
     this.active = false;
     this.enabled = true;
     this.pointerId = null;
@@ -22,6 +23,10 @@ class Gesture {
   }
   _pos(e) {
     const r = this.canvas.getBoundingClientRect();
+    if (this.camera) {
+      const { left, top, scale } = this.camera;
+      return { x: left + (e.clientX - r.left) / scale, y: top + (e.clientY - r.top) / scale };
+    }
     return { x: (e.clientX - r.left) * ((this.canvas.logicalWidth || this.canvas.width) / r.width),
              y: (e.clientY - r.top) * ((this.canvas.logicalHeight || this.canvas.height) / r.height) };
   }
@@ -51,7 +56,7 @@ class Gesture {
     this.onEnd && this.onEnd(d.len < 18 ? null : d);
     if (d.len < 18 && d.dur < 420 && this.onTap) {
       const rect = this.canvas.getBoundingClientRect();
-      const scale = (this.canvas.logicalWidth || this.canvas.width) / rect.width;
+      const scale = this.camera ? 1 / this.camera.scale : (this.canvas.logicalWidth || this.canvas.width) / rect.width;
       this.onTap(this.cur, 24 * scale);
     }
     this.start = null; this.cur = null;
@@ -63,7 +68,9 @@ class Gesture {
     this.active = false; this.start = null; this.cur = null; this.pointerId = null;
   }
   drag() {
-    const dx = this.cur.x - this.start.x, dy = this.cur.y - this.start.y;
+    // Keep a swipe of the same screen length equally strong in both camera views.
+    const gain = this.camera ? this.camera.scale / this.camera.overviewScale : 1;
+    const dx = (this.cur.x - this.start.x) * gain, dy = (this.cur.y - this.start.y) * gain;
     return {
       sx: this.start.x, sy: this.start.y, x: this.cur.x, y: this.cur.y,
       dx, dy, len: Math.hypot(dx, dy), angle: Math.atan2(dy, dx),

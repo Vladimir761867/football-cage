@@ -43,6 +43,7 @@ class Am300Mode {
     env.hud.hint(this.keeperCfg ? 'Целься мимо вратаря. Отпусти свайп в золотой зоне.' :
       env.tutorial ? 'Свайпни вверх к центру ворот. Пунктир покажет цель.' :
       env.challenge?.description || 'Свайп вверх. Отпусти, когда бегунок в золотой зоне.');
+    this._showTiming();
 
     env.gesture.onStart = p => {
       if (this.state !== 'aim') return;
@@ -121,6 +122,15 @@ class Am300Mode {
     }
     this.aim = null;
     Sound.kick();
+  }
+
+  _showTiming() {
+    if (this.state === 'aim' && this.drag?.len >= 18) {
+      const half = this.cfg.window / 2, progress = this._timing();
+      const ready = Math.abs(progress - .5) < half;
+      this.env.hud.timing?.({ progress, start:.5 - half, end:.5 + half, ready,
+        label: ready ? 'Отпускай!' : 'Дождись золотой зоны' });
+    } else this.env.hud.timing?.({ label: this.state === 'aim' ? 'Проведи вверх для прицела' : 'Удар по воротам' });
   }
 
   _zoneAt(x, y) {
@@ -213,6 +223,7 @@ class Am300Mode {
     const ag = Yards.artGoal(this.env.W, this.env.H);
     this.goal = ag || this._defGoal;
     this.oscT += dt;
+    this._showTiming();
     if (this.keeperCfg) this._moveKeeper(dt);
     if (this.state === 'fly' && this.fly) {
       this.fly.t += dt / this.fly.dur;
@@ -401,8 +412,6 @@ class Am300Mode {
       ctx.beginPath(); ctx.arc(this.aim.x, this.aim.y, 14, 0, 7); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(this.aim.x - 20, this.aim.y); ctx.lineTo(this.aim.x + 20, this.aim.y); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(this.aim.x, this.aim.y - 20); ctx.lineTo(this.aim.x, this.aim.y + 20); ctx.stroke();
-      // шкала тайминга
-      this._drawTimingBar(ctx, W, H);
       U.drawPower(ctx, this.drag, this.maxDrag);
     }
     // удар соперника: мяч летит в видимую точку
@@ -426,21 +435,6 @@ class Am300Mode {
       ctx.beginPath(); ctx.arc(this.impactFx.x, this.impactFx.y, 12 + this.impactFx.t * 40, 0, 7); ctx.stroke();
       ctx.globalAlpha = 1;
     }
-  }
-
-  _drawTimingBar(ctx, W, H) {
-    const bw = W * .6, bx = (W - bw) / 2, by = H * .70, bh = 14;
-    ctx.fillStyle = 'rgba(0,0,0,.55)';
-    ctx.beginPath(); ctx.roundRect(bx - 6, by - 6, bw + 12, bh + 12, 10); ctx.fill();
-    ctx.fillStyle = '#5a5f6a'; ctx.fillRect(bx, by, bw, bh);
-    // золотая зона — на турнире она заметно уже
-    ctx.fillStyle = '#ffd24d';
-    const half = this.cfg.window / 2;
-    ctx.fillRect(bx + bw * (.5 - half), by, bw * half * 2, bh);
-    // бегунок
-    const ph = this._timing();
-    ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.roundRect(bx + ph * bw - 4, by - 4, 8, bh + 8, 4); ctx.fill();
   }
 
   _finish(won, draw = false) {

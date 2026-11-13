@@ -243,6 +243,44 @@ test('gesture coordinates are identical at different pixel densities; second fin
     g._cancel(e(1,300)); assert.equal(result,null); assert.equal(g.active,false);
   }
 });
+test('close camera maps taps to players without changing the strength of an equal screen swipe', () => {
+  const { Gesture } = runtime();
+  const canvas = { addEventListener(){}, getBoundingClientRect:()=>({left:12,top:160}) };
+  const g = new Gesture(canvas, {left:0,top:300,scale:.6,overviewScale:.3});
+  const event = (x,y) => ({pointerId:1,clientX:x,clientY:y,preventDefault(){}});
+  g._down(event(132,280));
+  g._move(event(162,220));
+  const drag = g.drag();
+  assert.equal(drag.sx,200);
+  assert.equal(drag.sy,500);
+  assert.equal(drag.dx,100);
+  assert.equal(drag.dy,-200);
+  g._cancel();
+  g.onTap = (point, radius) => {
+    assert.equal(point.y,500);
+    assert.equal(radius,40);
+  };
+  g._down(event(132,280));
+  g._up(event(132,280));
+});
+test('cross corner buttons use the same contact window as a swipe', () => {
+  const { CrossMode } = runtime();
+  const e = env();
+  let buttons, meter;
+  e.choose = options => { buttons = options; };
+  e.hud = { setPills(){}, setTimer(){}, hint(){}, setPill(){}, timing(state){ meter = state; } };
+  const mode = new CrossMode({...e,attackOnly:true});
+  mode._roles();
+  mode._startCross();
+  mode.update(mode.flight.dur * .1);
+  assert.equal(meter.ready,false);
+  mode.update(mode.flight.dur * .5);
+  assert.equal(meter.ready,true);
+  buttons[0].action();
+  assert.equal(mode.shot.side,-1);
+  assert.equal(mode.shot.potential,100);
+  assert.equal(buttons.length,0);
+});
 test('bots can complete legal passes in both passing modes', () => {
   const { DogMode, SquareMode } = runtime();
   const dog = new DogMode(env()); dog.holder=1; dog.dogs=[]; dog._botPass();

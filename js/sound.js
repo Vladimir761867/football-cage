@@ -40,6 +40,7 @@ const Sound = (() => {
   return {
     kick()      { tone(140, 'sine', 0.005, 0.12, 0.5, 60); noise(0.06, 0.25, 1400); vibrate(18); },
     pass()      { tone(220, 'sine', 0.004, 0.07, 0.3, 120); vibrate(10); },
+    contact()   { tone(780, 'sine', .008, .08, .16); vibrate(18); },
     post()      {
       const yard = Yards.theme(), retro = ['80','90'].includes(Yards.ballEra(yard)) || yard.custom?.frame === 'retro';
       const pitch = retro ? 510 : 680;

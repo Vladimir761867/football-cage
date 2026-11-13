@@ -267,6 +267,18 @@ const I18n = (() => {
 Личный лучший результат|Personal best|Mejor marca personal|个人最佳|Recorde pessoal|व्यक्तिगत सर्वश्रेष्ठ
 Результат друга|Friend's score|Resultado del amigo|好友成绩|Resultado do amigo|दोस्त का स्कोर
 игр|matches|partidos|场次|jogos|मैच
+Приближённая камера|Close camera|Cámara cercana|近景镜头|Câmera próxima|नज़दीकी कैमरा
+Свайп вверх или кнопка угла по сигналу «Бей сейчас!».|Swipe up or tap a corner when it says Shoot now!|Desliza hacia arriba o toca una esquina al ver «¡Tira ahora!».|看到“现在射门！”时上滑或点选角落。|Deslize para cima ou toque num canto quando aparecer «Chute agora!».|“अभी मारें!” दिखे तो ऊपर स्वाइप करें या कोना टैप करें।
+В левый угол|Left corner|Esquina izquierda|左角|Canto esquerdo|बायाँ कोना
+В правый угол|Right corner|Esquina derecha|右角|Canto direito|दायाँ कोना
+Бей сейчас!|Shoot now!|¡Tira ahora!|现在射门！|Chute agora!|अभी मारें!
+Мяч летит…|Ball in flight…|Balón en el aire…|球在空中…|Bola no ar…|गेंद हवा में है…
+Бей быстрее!|Hurry, shoot!|¡Tira rápido!|快射门！|Chute rápido!|जल्दी मारें!
+Готовится навес|Cross coming|Preparando el centro|准备传中|Cruzamento a caminho|क्रॉस आने वाला है
+Удар по воротам|Shot on goal|Tiro a puerta|射门|Chute a gol|गोल पर शॉट
+Отпускай!|Release!|¡Suelta!|松手！|Solte!|छोड़ें!
+Дождись золотой зоны|Wait for the gold zone|Espera la zona dorada|等待金色区域|Espere a zona dourada|सुनहरे हिस्से का इंतज़ार करें
+Проведи вверх для прицела|Swipe up to aim|Desliza hacia arriba para apuntar|向上滑动瞄准|Deslize para cima para mirar|निशाना लगाने के लिए ऊपर स्वाइप करें
 `.trim().split('\n').map(line => line.split('|'));
   const originals = new WeakMap();
   const attributes = new WeakMap();

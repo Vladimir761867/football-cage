@@ -9,6 +9,8 @@
   };
   let current = 'home';
   let activeMode = null, rafId = 0, lastT = 0, gesture = null, lastModeId = null;
+  const camera = {};
+  let cameraBounds = null;
   let hintTimer = 0, toastTimer = 0;
   let difficulty = Difficulty.ids.includes(Save.data.difficulty) ? Save.data.difficulty : 'normal';
   let opponentCount = [1,2,3].includes(Save.data.opponentCount) ? Save.data.opponentCount : 1;
@@ -92,6 +94,19 @@
     hideHintSoon() {
       clearTimeout(hintTimer);
       hintTimer = setTimeout(() => $('#match-hint').classList.add('off'), 1200);
+    },
+    timing(state) {
+      const el = $('#shot-timing');
+      if (!state) { el.hidden = true; return; }
+      el.hidden = false;
+      el.classList.toggle('ready', Boolean(state.ready));
+      el.classList.toggle('idle', state.progress === undefined);
+      const label = $('#shot-timing-label'), text = I18n.text(state.label);
+      if (label.textContent !== text) label.textContent = text;
+      if (state.progress === undefined) return;
+      el.style.setProperty('--timing-start', state.start * 100 + '%');
+      el.style.setProperty('--timing-width', (state.end - state.start) * 100 + '%');
+      el.style.setProperty('--timing-cursor', state.progress * 100 + '%');
     }
   };
 
@@ -104,24 +119,43 @@
   };
   const W = 520, H = 1120;
 
+  function matchCameraBounds() {
+    if (!activeMode) return null;
+    if (lastModeId === 'square' || lastModeId === 'dog') {
+      const quad = matchOptions.online ? RoomField.quad : activeMode._quad();
+      return { top: Math.max(0, Math.min(...quad.map(p => p.y)) - 140),
+        bottom: Math.min(H, Math.max(...quad.map(p => p.y)) + 50) };
+    }
+    const goal = matchOptions.online ? activeMode.room.yard?.goal || RoomField.goal : activeMode.goal;
+    return { top: Math.max(0, goal.y - goal.h - 46), bottom: H * (lastModeId === 'cross' ? .81 : .97) };
+  }
+
   function fitMatchCanvas() {
     const canvas = $('#match-canvas');
     const viewport = $('#match-arena').getBoundingClientRect();
     if (!viewport.width || !viewport.height) return;
-    const scale = Math.min(viewport.width/W,viewport.height/H);
-    const width = W*scale, height = H*scale;
+    const overviewScale = Math.min(viewport.width / W, viewport.height / H);
+    const close = Save.data.settings.closeCamera !== false && cameraBounds;
+    const scale = close ? Math.min(viewport.width / W, viewport.height / (cameraBounds.bottom - cameraBounds.top), overviewScale * 2.2)
+      : overviewScale;
+    const width = Math.min(W * scale, viewport.width), height = Math.min(H * scale, viewport.height);
+    const centerY = close ? (cameraBounds.top + cameraBounds.bottom) / 2 : H / 2;
+    const top = U.clamp(centerY - height / (2 * scale), 0, H - height / scale);
+    if (camera.scale !== scale || camera.top !== top) gesture?._cancel();
+    Object.assign(camera, { left: 0, top, scale, overviewScale });
     canvas.style.width = width+'px';
     canvas.style.height = height+'px';
-    const dpr = Math.min(2,window.devicePixelRatio || 1);
-    const pixelsW = Math.round(width*dpr), pixelsH = Math.round(height*dpr);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pixelsW = Math.max(1, Math.round(width * dpr)), pixelsH = Math.max(1, Math.round(height * dpr));
     if (canvas.width !== pixelsW || canvas.height !== pixelsH) {
-      gesture?._cancel();
       canvas.width = pixelsW;
       canvas.height = pixelsH;
     }
-    canvas.logicalWidth = W;
-    canvas.logicalHeight = H;
-    canvas.getContext('2d').setTransform(canvas.width/W,0,0,canvas.height/H,0,0);
+    camera.drawScaleX = pixelsW / width * scale;
+    camera.drawScaleY = pixelsH / height * scale;
+    const control = $('#btn-camera');
+    control.setAttribute('aria-pressed', Save.data.settings.closeCamera !== false);
+    control.textContent = Number((scale / overviewScale).toFixed(1)) + '×';
   }
 
   function startMode(id, inCup = false, options = {}) {
@@ -154,6 +188,7 @@
       options.practice === 'solo' ? 'Удары по мишеням' :
       cup ? `${id === 'square' ? 'Квадрат' : '300'} · ${cup.stage + 1}/3` : challenge?.title || MODES[id].title;
     $('#match-hint').classList.remove('off');
+    hud.timing(null);
     $('#btn-skip-lesson').classList.toggle('hidden', !options.tutorial);
     // Keep the arena stable while the action buttons appear and disappear during a rally.
     $('#match-actions').hidden = !options.tutorial && id !== 'cross' && !options.online;
@@ -161,9 +196,10 @@
     const canvas = $('#match-canvas');
     if (gesture) gesture.destroy();
     gesture = null;
+    cameraBounds = null;
     fitMatchCanvas();
     const ctx = canvas.getContext('2d');
-    gesture = new Gesture(canvas);
+    gesture = new Gesture(canvas, camera);
     const bgCache = {};
     const env = {
       canvas, ctx, W, H, gesture, hud, difficulty: matchDifficulty,
@@ -195,12 +231,13 @@
         }
       },
       bgFor(key, painter) {
+        const width = canvas.width, height = Math.ceil(H * camera.drawScaleY);
         if (!bgCache[key] || bgCache[key].revision !== artRevision ||
-            bgCache[key].width !== canvas.width || bgCache[key].height !== canvas.height) {
+            bgCache[key].width !== width || bgCache[key].height !== height) {
           const oc = document.createElement('canvas');
-          oc.width = canvas.width; oc.height = canvas.height;
+          oc.width = width; oc.height = height;
           const background = oc.getContext('2d');
-          background.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+          background.setTransform(width / W, 0, 0, height / H, 0, 0);
           painter(background);
           oc.revision = artRevision;
           bgCache[key] = oc;
@@ -244,6 +281,8 @@
     if (cup?.mode === 'square') hud.hint(['Отбор. Сохраняй темп и держись в двойке.',
       'Полуфинал. Сильный свайп отправляет мяч в дальнюю часть четверти.',
       'Финал. Соперники чаще бьют в твою четверть. Побеждает первый.'][cup.stage]);
+    cameraBounds = matchCameraBounds();
+    fitMatchCanvas();
     matchElapsed = 0;
     lastT = performance.now();
     loop();
@@ -258,13 +297,22 @@
     matchElapsed += dt;
     activeMode.update(dt);
     if (!activeMode) return; // finish мог сработать внутри update
-    activeMode.draw(activeMode.env.ctx);
     const { ctx, W, H } = activeMode.env;
+    if (!gesture.active) {
+      const next = matchCameraBounds();
+      if (next && (next.top !== cameraBounds?.top || next.bottom !== cameraBounds?.bottom)) {
+        cameraBounds = next;
+        fitMatchCanvas();
+      }
+    }
+    ctx.setTransform(camera.drawScaleX, 0, 0, camera.drawScaleY, 0, -camera.top * camera.drawScaleY);
+    activeMode.draw(ctx);
     if (lastGoal) Collections.drawEffect(ctx,lastGoal.effect,lastGoal.x,lastGoal.y,matchElapsed-lastGoal.time,reducedMotion.matches);
     Yards.drawYardReaction(ctx, W, H, matchElapsed, lastGoal?.time);
   }
   function stopLoop() {
     cancelAnimationFrame(rafId);
+    if (gesture) { gesture.destroy(); gesture = null; }
     if (activeMode) { activeMode.destroy(); activeMode = null; }
     Yards.setScene(null);
   }
@@ -275,10 +323,12 @@
     row.classList.toggle('hidden', !options.length);
     options.forEach((option, index) => {
       const selected = option.selected ?? index === 0;
-      const b = document.createElement('button'); b.className = 'btn ' + (selected ? 'btn-green' : 'btn-paper');
-      b.textContent = option.text; b.setAttribute('aria-pressed', selected);
+      const b = document.createElement('button'); b.className = 'btn ' + (option.command ? 'btn-primary' : selected ? 'btn-green' : 'btn-paper');
+      b.textContent = option.text;
+      if (!option.command) b.setAttribute('aria-pressed', selected);
       b.onclick = () => {
         option.action();
+        if (option.command) return;
         Array.from(row.children).forEach(el => {
           el.classList.toggle('btn-green', el === b); el.classList.toggle('btn-paper', el !== b);
           el.setAttribute('aria-pressed', el === b);
@@ -1216,7 +1266,7 @@
       <div class="settings-row"><span>Звук</span><button class="toggle ${s.sound ? 'on' : ''}" id="tg-sound" aria-label="Звук" role="switch" aria-checked="${s.sound}"></button></div>
       <div class="settings-row"><span>Вибрация</span><button class="toggle ${s.vibro ? 'on' : ''}" id="tg-vibro" aria-label="Вибрация" role="switch" aria-checked="${s.vibro}"></button></div>
       <p class="feature-small">Матчей завершено: ${Save.data.playStats.matches} · игровых дней: ${Save.data.playStats.days} · обучений: ${Save.data.playStats.lesson} · нашивок: ${Save.data.badges}</p>
-      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 12.11.2026 · 23</p>
+      <p style="margin-top:12px;font-size:12.5px;opacity:.7">Версия 13.11.2026 · 24</p>
       <button class="btn btn-green" id="btn-update-game" ${nativeAndroid ? 'hidden' : ''} style="width:100%;margin-top:8px">Обновить игру</button>
       <p style="margin-top:12px;font-size:12.5px;opacity:.7">Прогресс хранится на этом устройстве. Косметика не влияет на игру.</p>
       <p><a href="privacy.html">Политика конфиденциальности</a></p>
@@ -1275,6 +1325,11 @@
   };
   $('#btn-settings').onclick = settingsModal;
   $('#btn-pause').onclick = pauseModal;
+  $('#btn-camera').onclick = () => {
+    Save.data.settings.closeCamera = Save.data.settings.closeCamera === false;
+    Save.save();
+    fitMatchCanvas();
+  };
   $('#btn-rematch').onclick = () => {
     Sound.ui();
     if (matchOptions.online?.yard) onlineYardMenu({code:matchOptions.online.yard.code,server:matchOptions.online.origin});

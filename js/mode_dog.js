@@ -351,8 +351,9 @@ class DogMode {
         Yards.drawPlayer(ctx, n.x, n.y, s, i === 0 ? '#3f7fba' : i % 2 ? '#c0392b' : '#7a9f4b', 'field',
           { me:i === 0 && !this.youDog, phase: n.phase, moving: false, face: n.face,
             kick: n.kickT > 0 ? Math.min(1, 1.01 - n.kickT / .22) : false });
-        ctx.fillStyle = i === 0 ? '#9bf36a' : '#fdf7e8';
-        ctx.font = `900 ${Math.round(12 * s)}px Rubik`; ctx.textAlign = 'center';
+        ctx.fillStyle = i === 0 && !this.youDog ? '#b1ff89' : '#fdf7e8';
+        ctx.font = i === 0 && !this.youDog ? '900 20px Rubik, system-ui' : `900 ${Math.round(15 * s)}px Rubik, system-ui`;
+        ctx.textAlign = 'center';
         Yards.drawFieldText(ctx, i === 0 && !this.youDog ? 'ТЫ' : `${i + 1}`, n.x, n.y + 19 * s);
         if (this.errors[i]) {
           ctx.fillStyle = '#ffd24d'; ctx.font = `700 ${Math.round(11 * s)}px Rubik`;
@@ -367,7 +368,7 @@ class DogMode {
         ctx.beginPath(); ctx.ellipse(d.x, d.y + 3, 9 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
         Yards.drawPlayer(ctx, d.x, d.y, s, '#d25743', 'field', { me:this.youDog && it.i === 0, phase: d.phase, moving: d.moving, face: d.face });
         if (this.youDog && it.i === 0) {
-          ctx.fillStyle = '#9bf36a'; ctx.font = '800 13px Rubik'; ctx.textAlign = 'center';
+          ctx.fillStyle = '#b1ff89'; ctx.font = '900 20px Rubik, system-ui'; ctx.textAlign = 'center';
           Yards.drawFieldText(ctx, 'ТЫ', d.x, d.y + 18);
         }
         if (this.lastSteal >= 0) Yards.drawEmote(ctx, d.x, d.y - 160 * s, .85, '😎');
@@ -379,7 +380,7 @@ class DogMode {
       ctx.beginPath(); ctx.arc(t.x, t.y, 5, 0, 7); ctx.fill();
     });
     ctx.globalAlpha = 1;
-    Yards.drawBall(ctx, bx, by, 12);
+    Yards.drawBall(ctx, bx, by, 15);
     if (this.aimDrag) { U.drawAim(ctx, this.aimDrag, 'rgba(255,255,255,.95)'); U.drawPower(ctx, this.aimDrag, Math.min(W, H) * .38); }
   }
 
